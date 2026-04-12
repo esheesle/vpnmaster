@@ -1,0 +1,20 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+*.keystore
+*.jks
+keystore.properties
+
+# App build outputs
+/app/build
+/app/src/main/jniLibs/
+
+# strongSwan build artifacts
+/build/strongswan/

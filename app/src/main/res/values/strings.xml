@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VPN Master</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_profiles">Profiles</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Home Screen -->
+    <string name="vpn_disconnected">Disconnected</string>
+    <string name="vpn_connecting">Connecting…</string>
+    <string name="vpn_connected">Connected</string>
+    <string name="vpn_disconnecting">Disconnecting…</string>
+    <string name="vpn_error">Connection Error</string>
+    <string name="vpn_reconnecting">Reconnecting…</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="no_profile_selected">No profile selected</string>
+    <string name="select_profile">Select a profile to connect</string>
+    <string name="bytes_sent">Sent</string>
+    <string name="bytes_received">Received</string>
+    <string name="connection_time">Duration</string>
+
+    <!-- Profiles -->
+    <string name="profiles_title">VPN Profiles</string>
+    <string name="add_profile">Add Profile</string>
+    <string name="edit_profile">Edit Profile</string>
+    <string name="delete_profile">Delete Profile</string>
+    <string name="delete_profile_confirm">Delete this profile? This cannot be undone.</string>
+    <string name="profile_name">Profile Name</string>
+    <string name="vpn_type">VPN Type</string>
+    <string name="vpn_type_wireguard">WireGuard</string>
+    <string name="vpn_type_ikev2">IKEv2 / IPsec</string>
+    <string name="server_address">Server Address</string>
+    <string name="import_file">Import from File</string>
+    <string name="import_qr">Scan QR Code</string>
+    <string name="save_profile">Save Profile</string>
+    <string name="profile_saved">Profile saved</string>
+    <string name="profile_deleted">Profile deleted</string>
+    <string name="set_as_default">Set as default</string>
+
+    <!-- WireGuard Config -->
+    <string name="wg_private_key">Private Key</string>
+    <string name="wg_public_key">Public Key</string>
+    <string name="wg_addresses">Addresses (comma-separated)</string>
+    <string name="wg_dns_servers">DNS Servers (comma-separated)</string>
+    <string name="wg_listen_port">Listen Port (optional)</string>
+    <string name="wg_mtu">MTU (optional)</string>
+    <string name="wg_peer">Peer</string>
+    <string name="wg_peer_public_key">Peer Public Key</string>
+    <string name="wg_peer_preshared_key">Pre-shared Key (optional)</string>
+    <string name="wg_peer_endpoint">Endpoint (host:port)</string>
+    <string name="wg_peer_allowed_ips">Allowed IPs (comma-separated)</string>
+    <string name="wg_peer_keepalive">Persistent Keepalive (seconds)</string>
+    <string name="wg_generate_keypair">Generate Key Pair</string>
+    <string name="wg_add_peer">Add Peer</string>
+    <string name="wg_remove_peer">Remove Peer</string>
+
+    <!-- IKEv2 Config -->
+    <string name="ikev2_remote_id">Remote Identity (optional)</string>
+    <string name="ikev2_local_id">Local Identity (optional)</string>
+    <string name="ikev2_auth_method">Authentication Method</string>
+    <string name="ikev2_auth_certificate">Certificate</string>
+    <string name="ikev2_auth_eap">EAP (Username/Password)</string>
+    <string name="ikev2_auth_cert_and_eap">Certificate + EAP</string>
+    <string name="ikev2_username">Username</string>
+    <string name="ikev2_password">Password</string>
+    <string name="ikev2_import_cert">Import User Certificate (.p12)</string>
+    <string name="ikev2_import_ca">Import CA Certificate</string>
+    <string name="ikev2_cert_password">Certificate Password</string>
+    <string name="ikev2_ike_proposal">IKE Proposal (optional)</string>
+    <string name="ikev2_esp_proposal">ESP Proposal (optional)</string>
+    <string name="ikev2_mtu">MTU</string>
+    <string name="ikev2_dpd_delay">DPD Interval (seconds)</string>
+    <string name="ikev2_rekey_ike">IKE Rekey Interval (minutes)</string>
+    <string name="ikev2_rekey_esp">ESP Rekey Interval (minutes)</string>
+
+    <!-- Split Tunnel -->
+    <string name="split_tunnel_title">Split Tunneling</string>
+    <string name="split_tunnel_mode">Split Tunnel Mode</string>
+    <string name="split_tunnel_disabled">Disabled (all traffic through VPN)</string>
+    <string name="split_tunnel_exclude">Exclude selected apps</string>
+    <string name="split_tunnel_include">Include only selected apps</string>
+    <string name="split_tunnel_apps">Applications</string>
+    <string name="split_tunnel_routes">Route-based Split Tunnel</string>
+    <string name="excluded_routes">Excluded Routes (CIDR, one per line)</string>
+    <string name="included_routes">Included Routes (CIDR, one per line)</string>
+    <string name="search_apps">Search apps</string>
+    <string name="show_system_apps">Show system apps</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="always_on_vpn">Always-on VPN</string>
+    <string name="always_on_vpn_desc">Enable in Android system settings</string>
+    <string name="always_on_vpn_instructions">To enable Always-on VPN:\n\n1. Open Android Settings\n2. Go to Network &amp; Internet → VPN\n3. Tap the gear icon next to VPN Master\n4. Enable \"Always-on VPN\"</string>
+    <string name="open_vpn_settings">Open VPN Settings</string>
+    <string name="watchdog_enabled">Connection Watchdog</string>
+    <string name="watchdog_desc">Automatically reconnect on failure</string>
+    <string name="watchdog_interval">Check Interval</string>
+    <string name="auto_connect_boot">Auto-connect on Boot</string>
+    <string name="auto_connect_boot_desc">Connect VPN when device starts</string>
+
+    <!-- QR Scanner -->
+    <string name="qr_scan_title">Scan QR Code</string>
+    <string name="qr_scan_instruction">Point camera at a WireGuard QR code</string>
+    <string name="qr_scan_success">Configuration imported</string>
+    <string name="qr_scan_error">Invalid QR code</string>
+    <string name="camera_permission_required">Camera permission is required to scan QR codes</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_vpn">VPN Status</string>
+    <string name="notification_channel_vpn_desc">Shows VPN connection status</string>
+    <string name="notification_connected">Connected to %s</string>
+    <string name="notification_connecting">Connecting to %s…</string>
+    <string name="notification_disconnected">VPN Disconnected</string>
+    <string name="notification_action_disconnect">Disconnect</string>
+
+    <!-- Common -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="save">Save</string>
+    <string name="error">Error</string>
+    <string name="loading">Loading…</string>
+</resources>
