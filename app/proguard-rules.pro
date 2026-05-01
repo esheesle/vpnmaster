@@ -2,21 +2,13 @@
 -keep class com.wireguard.** { *; }
 -keep class com.wireguard.android.backend.** { *; }
 
-# strongSwan JNI
--keep class net.swlr.vpnmaster.vpn.ikev2.CharonBridge { *; }
--keep class net.swlr.vpnmaster.vpn.ikev2.CharonBridge$* { *; }
--keepclassmembers class net.swlr.vpnmaster.vpn.ikev2.CharonBridge {
-    native <methods>;
-}
-
 # Room
 -keep class * extends androidx.room.RoomDatabase
 -keep @androidx.room.Entity class *
 -dontwarn androidx.room.paging.**
 
 # SQLCipher
--keep class net.sqlcipher.** { *; }
--keep class net.sqlcipher.database.** { *; }
+-keep class net.zetetic.database.sqlcipher.** { *; }
 
 # Kotlin serialization
 -keepattributes *Annotation*, InnerClasses
@@ -33,6 +25,14 @@
 
 # ML Kit
 -keep class com.google.mlkit.** { *; }
+
+# Strip verbose, debug, and info logging from release builds.
+# Only Log.w and Log.e remain, which indicate actual problems.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}
 
 # General
 -keepattributes SourceFile,LineNumberTable

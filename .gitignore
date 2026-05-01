@@ -15,6 +15,3 @@ keystore.properties
 # App build outputs
 /app/build
 /app/src/main/jniLibs/
-
-# strongSwan build artifacts
-/build/strongswan/

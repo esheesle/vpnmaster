@@ -42,15 +42,7 @@ export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/25.2.9519653"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 ```
 
-### 3. Install Native Build Tools (for strongSwan)
-
-```bash
-brew install autoconf automake libtool pkg-config gettext
-# Ensure gettext is linked:
-brew link --force gettext
-```
-
-### 4. Install Gradle Wrapper
+### 3. Install Gradle Wrapper
 
 The project includes Gradle wrapper configuration. On first build, Gradle 8.7 is downloaded automatically. No manual Gradle install needed.
 
@@ -82,10 +74,6 @@ cd /Users/esheesle/Development/claude/vpnmaster
 git init
 git add .
 git commit -m "Initial project structure"
-
-# Add strongSwan submodule
-git submodule add https://github.com/strongswan/strongswan.git external/strongswan
-git submodule update --init --recursive
 ```
 
 ### 2. Create local.properties
@@ -99,45 +87,6 @@ EOF
 
 ---
 
-## Build strongSwan Native Libraries
-
-The IKEv2 functionality requires building strongSwan's native C libraries. **This step is only needed for IKEv2 support** — WireGuard works without it.
-
-### Automated Build
-
-```bash
-./scripts/build-strongswan.sh
-```
-
-This builds for all four ABIs (armeabi-v7a, arm64-v8a, x86, x86_64) and places the `.so` files in `app/src/main/jniLibs/`.
-
-### Build for Specific ABIs
-
-To save time, build only for your target device:
-```bash
-# Most modern phones:
-./scripts/build-strongswan.sh --abi arm64-v8a
-
-# Emulator testing:
-./scripts/build-strongswan.sh --abi x86_64
-```
-
-### Manual Build (if script fails)
-
-See `scripts/build-strongswan.sh` for the detailed steps. The key process is:
-
-1. Run `autogen.sh` in the strongSwan source directory
-2. `./configure` with Android-specific flags and NDK toolchain
-3. `make && make install`
-4. Build the JNI bridge with `ndk-build`
-5. Copy resulting `.so` files to `app/src/main/jniLibs/<abi>/`
-
-### WireGuard-Only Build
-
-If you only need WireGuard (no IKEv2), you can skip the native build entirely. The WireGuard tunnel library is pulled from Maven Central automatically. The app will detect if strongSwan native libraries are missing and disable IKEv2 options gracefully.
-
----
-
 ## Updating Dependencies
 
 ### Update WireGuard
@@ -147,20 +96,6 @@ The WireGuard tunnel library is a Maven dependency. To update:
 1. Check latest version at the [WireGuard Android repository](https://github.com/WireGuard/wireguard-android)
 2. Update `wireguardTunnel` version in `gradle/libs.versions.toml`
 3. Rebuild
-
-### Update strongSwan
-
-```bash
-cd external/strongswan
-git fetch origin
-git checkout <desired-tag-or-commit>
-cd ../..
-git add external/strongswan
-git commit -m "Update strongSwan to <version>"
-
-# Rebuild native libraries
-./scripts/build-strongswan.sh
-```
 
 ---
 
@@ -318,18 +253,6 @@ Create `local.properties` with your SDK path (see Project Setup).
 ### Build fails: "NDK not configured"
 Install NDK via SDK Manager or set `ndk.dir` in `local.properties`.
 
-### strongSwan build fails: "autoconf not found"
-```bash
-brew install autoconf automake libtool
-```
-
-### strongSwan build fails: configure errors
-Ensure the submodule is fully initialized:
-```bash
-git submodule update --init --recursive
-cd external/strongswan && ./autogen.sh && cd ../..
-```
-
 ### APK too large
 Build for specific ABIs only:
 ```bash
@@ -361,7 +284,6 @@ Always-on VPN requires Android 8.0+ and the service must declare `SUPPORTS_ALWAY
 
 This project integrates:
 - **WireGuard** — GPLv2 (https://www.wireguard.com/)
-- **strongSwan** — GPLv2 (https://www.strongswan.org/)
 
 The combined application is distributed under the **GNU General Public License v2.0**.
 Source code must be made available to recipients of the binary.
