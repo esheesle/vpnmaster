@@ -4,11 +4,8 @@ import android.content.Context
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import net.swlr.vpnmaster.data.model.IkeV2AuthMethod
-import net.swlr.vpnmaster.data.model.IkeV2Config
+import com.wireguard.config.BadConfigException
+import com.wireguard.config.Config
 import net.swlr.vpnmaster.data.model.VpnProfile
 import net.swlr.vpnmaster.data.model.VpnType
 import net.swlr.vpnmaster.data.model.WireGuardConfig
@@ -34,21 +31,7 @@ class ConfigImporter @Inject constructor(
                 BufferedReader(InputStreamReader(stream)).readText()
             } ?: return ImportResult.Error("Could not read file")
 
-            val fileName = uri.lastPathSegment ?: ""
-            when {
-                fileName.endsWith(".conf") || isWireGuardConfig(content) -> {
-                    parseWireGuardConfig(content)
-                }
-                fileName.endsWith(".sswan") -> {
-                    parseStrongSwanProfile(content)
-                }
-                else -> {
-                    // Try WireGuard first, then strongSwan
-                    val wgResult = parseWireGuardConfig(content)
-                    if (wgResult is ImportResult.Success) wgResult
-                    else parseStrongSwanProfile(content)
-                }
-            }
+            parseWireGuardConfig(content)
         } catch (e: Exception) {
             android.util.Log.e("ConfigImporter", "Import failed", e)
             ImportResult.Error("Could not import this file. Check the format and try again.")
@@ -56,86 +39,35 @@ class ConfigImporter @Inject constructor(
     }
 
     fun parseQrCode(data: String): ImportResult {
-        return parseWireGuardConfig(data)
+        return parseWireGuardWithLibrary(data)
     }
 
-    private fun isWireGuardConfig(content: String): Boolean {
-        return content.contains("[Interface]", ignoreCase = true) &&
-                content.contains("[Peer]", ignoreCase = true)
-    }
-
-    fun parseWireGuardConfig(content: String): ImportResult {
+    private fun parseWireGuardWithLibrary(content: String): ImportResult {
         return try {
-            val lines = content.lines()
-            var section = ""
-            var privateKey = ""
-            val addresses = mutableListOf<String>()
-            val dnsServers = mutableListOf<String>()
-            var listenPort: Int? = null
-            var mtu: Int? = null
-            val peers = mutableListOf<WireGuardPeer>()
+            val parsed = Config.parse(content.byteInputStream())
 
-            // Current peer being built
-            var peerPublicKey = ""
-            var peerPsk: String? = null
-            var peerEndpoint = ""
-            var peerAllowedIPs = mutableListOf<String>()
-            var peerKeepalive: Int? = null
+            val iface = parsed.`interface`
+            val privateKey = iface.keyPair.privateKey.toBase64()
+            val addresses = iface.addresses.map { it.toString() }
+            val dnsServers = iface.dnsServers.map { it.hostAddress ?: it.toString() }
+            val listenPort = iface.listenPort.orElse(null)?.toInt()
+            val mtu = iface.mtu.orElse(null)?.toInt()
 
-            for (line in lines) {
-                val trimmed = line.trim()
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue
-
-                when {
-                    trimmed.equals("[Interface]", ignoreCase = true) -> {
-                        if (section == "Peer" && peerPublicKey.isNotBlank()) {
-                            peers.add(WireGuardPeer(peerPublicKey, peerPsk, peerEndpoint, peerAllowedIPs.toList(), peerKeepalive))
-                            peerPublicKey = ""; peerPsk = null; peerEndpoint = ""; peerAllowedIPs = mutableListOf(); peerKeepalive = null
-                        }
-                        section = "Interface"
-                    }
-                    trimmed.equals("[Peer]", ignoreCase = true) -> {
-                        if (section == "Peer" && peerPublicKey.isNotBlank()) {
-                            peers.add(WireGuardPeer(peerPublicKey, peerPsk, peerEndpoint, peerAllowedIPs.toList(), peerKeepalive))
-                            peerPublicKey = ""; peerPsk = null; peerEndpoint = ""; peerAllowedIPs = mutableListOf(); peerKeepalive = null
-                        }
-                        section = "Peer"
-                    }
-                    else -> {
-                        val eqIdx = trimmed.indexOf('=')
-                        if (eqIdx < 0) continue
-                        val key = trimmed.substring(0, eqIdx).trim()
-                        val value = trimmed.substring(eqIdx + 1).trim()
-
-                        when (section) {
-                            "Interface" -> when (key.lowercase()) {
-                                "privatekey" -> privateKey = value
-                                "address" -> addresses.addAll(value.split(",").map { it.trim() })
-                                "dns" -> dnsServers.addAll(value.split(",").map { it.trim() })
-                                "listenport" -> listenPort = value.toIntOrNull()
-                                "mtu" -> mtu = value.toIntOrNull()
-                            }
-                            "Peer" -> when (key.lowercase()) {
-                                "publickey" -> peerPublicKey = value
-                                "presharedkey" -> peerPsk = value
-                                "endpoint" -> peerEndpoint = value
-                                "allowedips" -> peerAllowedIPs.addAll(value.split(",").map { it.trim() })
-                                "persistentkeepalive" -> peerKeepalive = value.toIntOrNull()
-                            }
-                        }
-                    }
-                }
-            }
-            // Add last peer
-            if (peerPublicKey.isNotBlank()) {
-                peers.add(WireGuardPeer(peerPublicKey, peerPsk, peerEndpoint, peerAllowedIPs.toList(), peerKeepalive))
+            val peers = parsed.peers.map { peer ->
+                WireGuardPeer(
+                    publicKey = peer.publicKey.toBase64(),
+                    preSharedKey = peer.preSharedKey.orElse(null)?.toBase64(),
+                    endpoint = peer.endpoint.orElse(null)?.let { "${it.host}:${it.port}" } ?: "",
+                    allowedIPs = peer.allowedIps.map { it.toString() },
+                    persistentKeepalive = peer.persistentKeepalive.orElse(null)?.toInt()
+                )
             }
 
-            if (privateKey.isBlank()) {
-                return ImportResult.Error("No private key found in WireGuard config")
-            }
-
-            val serverAddress = peers.firstOrNull()?.endpoint?.substringBeforeLast(":") ?: ""
+            // Use the parsed host directly. substringBeforeLast(":") on the
+            // composed "host:port" string is brittle for IPv6 — e.g. brackets
+            // survive into the result, or a bare-IPv6 host gets its last hextet
+            // chopped off if the port was already glued on.
+            val serverAddress = parsed.peers.firstOrNull()?.endpoint?.orElse(null)?.host ?: ""
             val config = WireGuardConfig(
                 privateKey = privateKey,
                 addresses = addresses,
@@ -153,50 +85,47 @@ class ConfigImporter @Inject constructor(
                     wireGuardConfig = config
                 )
             )
+        } catch (e: BadConfigException) {
+            android.util.Log.e("ConfigImporter", "WireGuard library parse failed", e)
+            ImportResult.Error("Invalid WireGuard config: ${e.reason.name}")
         } catch (e: Exception) {
             android.util.Log.e("ConfigImporter", "WireGuard parse failed", e)
-            ImportResult.Error("Invalid WireGuard configuration file")
+            ImportResult.Error("Invalid WireGuard configuration")
         }
     }
 
-    private fun parseStrongSwanProfile(content: String): ImportResult {
-        return try {
-            val root = json.parseToJsonElement(content).jsonObject
-            val remoteObj = root["remote"]?.jsonObject
-            val localObj = root["local"]?.jsonObject
+    fun parseWireGuardConfig(content: String): ImportResult {
+        return parseWireGuardWithLibrary(content)
+    }
 
-            val gateway = remoteObj?.get("addr")?.jsonPrimitive?.content
-                ?: return ImportResult.Error("No gateway address in .sswan profile")
+    /**
+     * Render a profile back into wg-quick `.conf` format for share/export.
+     * We hand-build the text rather than going through Config.toWgQuickString()
+     * because the library form requires a fully validated config (failing on,
+     * e.g., missing peer endpoints), and we want export to succeed for any
+     * profile the user has saved — even partial ones.
+     */
+    fun toWgQuickString(profile: VpnProfile): String {
+        val cfg = profile.wireGuardConfig ?: return ""
+        return buildString {
+            appendLine("[Interface]")
+            appendLine("PrivateKey = ${cfg.privateKey}")
+            if (cfg.addresses.isNotEmpty()) appendLine("Address = ${cfg.addresses.joinToString(", ")}")
+            if (cfg.dnsServers.isNotEmpty()) appendLine("DNS = ${cfg.dnsServers.joinToString(", ")}")
+            cfg.listenPort?.let { appendLine("ListenPort = $it") }
+            cfg.mtu?.let { appendLine("MTU = $it") }
 
-            val remoteId = remoteObj["id"]?.jsonPrimitive?.content
-            val localId = localObj?.get("id")?.jsonPrimitive?.content
-
-            val authMethod = when (localObj?.get("type")?.jsonPrimitive?.content) {
-                "eap" -> IkeV2AuthMethod.EAP
-                "pubkey", "cert" -> IkeV2AuthMethod.CERTIFICATE
-                else -> IkeV2AuthMethod.EAP
+            cfg.peers.forEach { peer ->
+                appendLine()
+                appendLine("[Peer]")
+                appendLine("PublicKey = ${peer.publicKey}")
+                peer.preSharedKey?.let { appendLine("PresharedKey = $it") }
+                if (peer.endpoint.isNotBlank()) appendLine("Endpoint = ${peer.endpoint}")
+                if (peer.allowedIPs.isNotEmpty()) {
+                    appendLine("AllowedIPs = ${peer.allowedIPs.joinToString(", ")}")
+                }
+                peer.persistentKeepalive?.let { appendLine("PersistentKeepalive = $it") }
             }
-
-            val eapId = localObj?.get("eap_id")?.jsonPrimitive?.content
-
-            val config = IkeV2Config(
-                remoteId = remoteId,
-                localId = localId,
-                authMethod = authMethod,
-                username = eapId
-            )
-
-            ImportResult.Success(
-                VpnProfile(
-                    name = "Imported IKEv2",
-                    type = VpnType.IKEV2,
-                    serverAddress = gateway,
-                    ikeV2Config = config
-                )
-            )
-        } catch (e: Exception) {
-            android.util.Log.e("ConfigImporter", "strongSwan parse failed", e)
-            ImportResult.Error("Invalid strongSwan profile file")
         }
     }
 }

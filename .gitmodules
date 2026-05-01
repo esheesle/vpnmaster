@@ -1,4 +1,0 @@
-[submodule "external/strongswan"]
-	path = external/strongswan
-	url = https://github.com/strongswan/strongswan.git
-	branch = master

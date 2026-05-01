@@ -1,5 +1,5 @@
 [versions]
-agp = "8.5.2"
+agp = "8.7.3"
 kotlin = "1.9.24"
 ksp = "1.9.24-1.0.20"
 coreKtx = "1.13.1"
@@ -15,8 +15,8 @@ datastore = "1.1.1"
 securityCrypto = "1.0.0"
 camerax = "1.3.4"
 mlkitBarcode = "17.2.0"
-wireguardTunnel = "1.0.20230706"
-sqlcipher = "4.5.7"
+wireguardTunnel = "1.0.20260102"
+sqlcipher = "4.6.1"
 workManager = "2.9.1"
 coroutines = "1.8.1"
 serialization = "1.6.3"
@@ -52,7 +52,7 @@ hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-com
 hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hiltNavigationCompose" }
 hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltNavigationCompose" }
 wireguard-tunnel = { group = "com.wireguard.android", name = "tunnel", version.ref = "wireguardTunnel" }
-sqlcipher = { group = "net.zetetic", name = "android-database-sqlcipher", version.ref = "sqlcipher" }
+sqlcipher = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
 mlkit-barcode = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
