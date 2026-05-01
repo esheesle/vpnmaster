@@ -7,13 +7,14 @@ import androidx.room.Room
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import androidx.work.WorkManager
+import com.wireguard.android.backend.GoBackend
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
-import net.sqlcipher.database.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import net.swlr.vpnmaster.data.db.VpnDatabase
 import net.swlr.vpnmaster.data.db.VpnProfileDao
 import java.security.SecureRandom
@@ -39,21 +40,31 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VpnDatabase {
         val passphrase = getOrCreateDatabaseKey(context)
-        val factory = SupportFactory(passphrase)
+        System.loadLibrary("sqlcipher")
+        val factory = SupportOpenHelperFactory(passphrase)
 
+        // No fallbackToDestructiveMigration: schema bumps must add an explicit
+        // Migration. Wiping the user's profile DB on upgrade is never the right
+        // recovery — the SQLCipher key is keystore-bound, so they can't recover
+        // the file out-of-band either.
         return Room.databaseBuilder(
             context,
             VpnDatabase::class.java,
             "vpnmaster.db"
         )
             .openHelperFactory(factory)
-            .fallbackToDestructiveMigration()
             .build()
     }
 
     @Provides
     fun provideProfileDao(database: VpnDatabase): VpnProfileDao {
         return database.profileDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideGoBackend(@ApplicationContext context: Context): GoBackend {
+        return GoBackend(context)
     }
 
     @Provides
@@ -70,8 +81,14 @@ object AppModule {
      * We decode the Base64 back to raw bytes before passing to SQLCipher.
      */
     private fun getOrCreateDatabaseKey(context: Context): ByteArray {
+        // security-crypto 1.0.0 only ships the deprecated MasterKeys API; the
+        // newer MasterKey.Builder lives in 1.1.0-alpha. Keep MasterKeys until the
+        // gradle dep is bumped — alias is identical so existing keystore entries
+        // still resolve.
+        @Suppress("DEPRECATION")
         val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
 
+        @Suppress("DEPRECATION")
         val prefs = EncryptedSharedPreferences.create(
             SECURE_PREFS_NAME,
             masterKeyAlias,
@@ -88,7 +105,7 @@ object AppModule {
         val key = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val encoded = Base64.encodeToString(key, Base64.NO_WRAP)
         prefs.edit().putString(DB_KEY_PREF, encoded).apply()
-        Log.i(TAG, "Generated new database encryption key")
+        Log.d(TAG, "Generated new database encryption key")
         return key
     }
 }

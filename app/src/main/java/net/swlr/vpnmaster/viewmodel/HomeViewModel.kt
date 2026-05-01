@@ -7,15 +7,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import net.swlr.vpnmaster.data.model.VpnProfile
 import net.swlr.vpnmaster.data.repository.ProfileRepository
 import net.swlr.vpnmaster.service.VpnMasterService
@@ -24,6 +25,7 @@ import net.swlr.vpnmaster.vpn.VpnState
 import net.swlr.vpnmaster.vpn.VpnStatistics
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -32,9 +34,28 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
 
     val vpnState: StateFlow<VpnState> = orchestrator.state
-    val statistics: StateFlow<VpnStatistics> = orchestrator.statistics
     val activeProfile: StateFlow<VpnProfile?> = orchestrator.activeProfile
     val errorMessage: StateFlow<String?> = orchestrator.errorMessage
+
+    // Stats poll only fires while a UI subscriber is collecting AND the tunnel is up.
+    // Without WhileSubscribed, the previous init{} loop polled GoBackend.getStatistics
+    // every 2s for the entire activity lifetime — including with the screen off — which
+    // was the dominant battery cost when connected.
+    val statistics: StateFlow<VpnStatistics> = orchestrator.state
+        .flatMapLatest { state ->
+            if (state == VpnState.CONNECTED) {
+                flow {
+                    while (true) {
+                        orchestrator.refreshStatistics()
+                        emit(orchestrator.statistics.value)
+                        delay(2_000)
+                    }
+                }
+            } else {
+                flowOf(VpnStatistics())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VpnStatistics())
 
     val profiles = profileRepository.getAllProfiles()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -44,36 +65,6 @@ class HomeViewModel @Inject constructor(
 
     private val _selectedProfile = MutableStateFlow<VpnProfile?>(null)
     val selectedProfile: StateFlow<VpnProfile?> = _selectedProfile.asStateFlow()
-
-    private var statsJob: Job? = null
-
-    init {
-        // Start/stop stats polling based on VPN state
-        viewModelScope.launch {
-            vpnState.collect { state ->
-                if (state == VpnState.CONNECTED) {
-                    startStatsPolling()
-                } else {
-                    stopStatsPolling()
-                }
-            }
-        }
-    }
-
-    private fun startStatsPolling() {
-        if (statsJob?.isActive == true) return
-        statsJob = viewModelScope.launch {
-            while (isActive) {
-                orchestrator.refreshStatistics()
-                delay(2000)
-            }
-        }
-    }
-
-    private fun stopStatsPolling() {
-        statsJob?.cancel()
-        statsJob = null
-    }
 
     fun selectProfile(profile: VpnProfile) {
         _selectedProfile.value = profile

@@ -15,9 +15,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.swlr.vpnmaster.config.ConfigImporter
 import net.swlr.vpnmaster.config.ImportResult
-import net.swlr.vpnmaster.data.model.IkeV2Config
 import net.swlr.vpnmaster.data.model.VpnProfile
-import net.swlr.vpnmaster.data.model.VpnType
 import net.swlr.vpnmaster.data.model.WireGuardConfig
 import net.swlr.vpnmaster.data.repository.ProfileRepository
 import javax.inject.Inject
@@ -68,25 +66,14 @@ class ProfileViewModel @Inject constructor(
                 return@launch
             }
 
-            when (profile.type) {
-                VpnType.WIREGUARD -> {
-                    val config = profile.wireGuardConfig
-                    if (config == null || config.privateKey.isBlank()) {
-                        _uiMessage.value = "WireGuard private key is required"
-                        return@launch
-                    }
-                    if (config.peers.isEmpty() || config.peers.first().publicKey.isBlank()) {
-                        _uiMessage.value = "At least one peer with a public key is required"
-                        return@launch
-                    }
-                }
-                VpnType.IKEV2 -> {
-                    val config = profile.ikeV2Config
-                    if (config == null) {
-                        _uiMessage.value = "IKEv2 configuration is required"
-                        return@launch
-                    }
-                }
+            val config = profile.wireGuardConfig
+            if (config == null || config.privateKey.isBlank()) {
+                _uiMessage.value = "WireGuard private key is required"
+                return@launch
+            }
+            if (config.peers.isEmpty() || config.peers.first().publicKey.isBlank()) {
+                _uiMessage.value = "At least one peer with a public key is required"
+                return@launch
             }
 
             try {
@@ -117,11 +104,48 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    fun clearDefault() {
+        viewModelScope.launch {
+            profileRepository.clearDefaultProfile()
+            _uiMessage.value = "Default cleared"
+        }
+    }
+
+    fun duplicateProfile(profile: VpnProfile) {
+        viewModelScope.launch {
+            // New random id + isDefault=false so the duplicate doesn't usurp the
+            // original. Name suffix avoids collision in the list.
+            val copy = profile.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                name = profile.name + " (copy)",
+                isDefault = false,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            profileRepository.saveProfile(copy)
+            _uiMessage.value = "Profile duplicated"
+        }
+    }
+
+    /** Returns the profile rendered as wg-quick `.conf` text, or null if absent. */
+    fun exportProfileText(profile: VpnProfile): String =
+        configImporter.toWgQuickString(profile)
+
     fun importFromUri(uri: Uri) {
         viewModelScope.launch {
             when (val result = configImporter.importFromUri(uri)) {
                 is ImportResult.Success -> {
-                    _editingProfile.value = result.profile
+                    val imported = result.profile
+                    val current = _editingProfile.value
+                    _editingProfile.value = if (current != null) {
+                        current.copy(
+                            name = if (current.name.isBlank()) imported.name else current.name,
+                            serverAddress = imported.serverAddress,
+                            wireGuardConfig = imported.wireGuardConfig
+                        )
+                    } else {
+                        imported
+                    }
                     _uiMessage.value = "Configuration imported"
                 }
                 is ImportResult.Error -> {
@@ -134,22 +158,23 @@ class ProfileViewModel @Inject constructor(
     fun importFromQrCode(data: String) {
         when (val result = configImporter.parseQrCode(data)) {
             is ImportResult.Success -> {
-                _editingProfile.value = result.profile
+                val imported = result.profile
+                val current = _editingProfile.value
+                _editingProfile.value = if (current != null) {
+                    current.copy(
+                        name = if (current.name.isBlank()) imported.name else current.name,
+                        serverAddress = imported.serverAddress,
+                        wireGuardConfig = imported.wireGuardConfig
+                    )
+                } else {
+                    imported
+                }
                 _uiMessage.value = "QR code imported"
             }
             is ImportResult.Error -> {
                 _uiMessage.value = result.message
             }
         }
-    }
-
-    fun changeVpnType(type: VpnType) {
-        val current = _editingProfile.value ?: return
-        _editingProfile.value = current.copy(
-            type = type,
-            wireGuardConfig = if (type == VpnType.WIREGUARD) current.wireGuardConfig ?: WireGuardConfig() else current.wireGuardConfig,
-            ikeV2Config = if (type == VpnType.IKEV2) current.ikeV2Config ?: IkeV2Config() else current.ikeV2Config
-        )
     }
 
     fun clearMessage() {

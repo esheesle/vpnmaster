@@ -66,7 +66,7 @@ abstract class VpnProfileDao {
     abstract suspend fun getProfileCount(): Int
 }
 
-@Database(entities = [VpnProfileEntity::class], version = 1, exportSchema = false)
+@Database(entities = [VpnProfileEntity::class], version = 1, exportSchema = true)
 abstract class VpnDatabase : RoomDatabase() {
     abstract fun profileDao(): VpnProfileDao
 }

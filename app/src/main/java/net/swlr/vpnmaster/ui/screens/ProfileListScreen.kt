@@ -13,13 +13,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -119,6 +124,9 @@ fun ProfileListScreen(
                             onEdit = { navController.navigate(Routes.profileEdit(profile.id)) },
                             onDelete = { viewModel.deleteProfile(profile) },
                             onSetDefault = { viewModel.setDefault(profile.id) },
+                            onClearDefault = { viewModel.clearDefault() },
+                            onDuplicate = { viewModel.duplicateProfile(profile) },
+                            onExport = { viewModel.exportProfileText(profile) },
                             onSplitTunnel = { navController.navigate(Routes.splitTunnel(profile.id)) }
                         )
                     }
@@ -134,10 +142,14 @@ private fun ProfileCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onSetDefault: () -> Unit,
+    onClearDefault: () -> Unit,
+    onDuplicate: () -> Unit,
+    onExport: () -> String,
     onSplitTunnel: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -200,7 +212,13 @@ private fun ProfileCard(
                         onClick = { showMenu = false; onEdit() },
                         leadingIcon = { Icon(Icons.Default.Edit, null) }
                     )
-                    if (!profile.isDefault) {
+                    if (profile.isDefault) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.clear_default)) },
+                            onClick = { showMenu = false; onClearDefault() },
+                            leadingIcon = { Icon(Icons.Filled.StarBorder, null) }
+                        )
+                    } else {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.set_as_default)) },
                             onClick = { showMenu = false; onSetDefault() },
@@ -210,6 +228,27 @@ private fun ProfileCard(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.split_tunnel_title)) },
                         onClick = { showMenu = false; onSplitTunnel() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.duplicate_profile)) },
+                        onClick = { showMenu = false; onDuplicate() },
+                        leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.export_profile)) },
+                        onClick = {
+                            showMenu = false
+                            val text = onExport()
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "${profile.name}.conf")
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
+                            context.startActivity(
+                                Intent.createChooser(send, "Export ${profile.name}")
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Filled.Share, null) }
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.delete_profile)) },

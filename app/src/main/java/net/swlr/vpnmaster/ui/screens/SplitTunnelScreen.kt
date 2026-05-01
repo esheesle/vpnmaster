@@ -1,5 +1,7 @@
 package net.swlr.vpnmaster.ui.screens
 
+import android.graphics.drawable.Drawable
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
@@ -29,21 +32,26 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import net.swlr.vpnmaster.R
 import net.swlr.vpnmaster.data.model.SplitTunnelMode
 import net.swlr.vpnmaster.viewmodel.SplitTunnelViewModel
@@ -60,7 +68,10 @@ fun SplitTunnelScreen(
     val showSystemApps by viewModel.showSystemApps.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val uiMessage by viewModel.uiMessage.collectAsState()
+    val isDirty by viewModel.isDirty.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    var showDiscardDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(profileId) {
         viewModel.loadProfile(profileId)
@@ -73,12 +84,18 @@ fun SplitTunnelScreen(
         }
     }
 
+    fun attemptBack() {
+        if (isDirty) showDiscardDialog = true else navController.popBackStack()
+    }
+
+    BackHandler(enabled = isDirty) { showDiscardDialog = true }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.split_tunnel_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = { attemptBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 }
@@ -137,7 +154,6 @@ fun SplitTunnelScreen(
                 if (splitConfig.mode != SplitTunnelMode.DISABLED) {
                     Spacer(Modifier.height(12.dp))
 
-                    // Route-based split tunneling
                     OutlinedTextField(
                         value = splitConfig.excludedRoutes.joinToString("\n"),
                         onValueChange = { viewModel.updateExcludedRoutes(it) },
@@ -160,7 +176,6 @@ fun SplitTunnelScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Search and filter
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { viewModel.setSearchQuery(it) },
@@ -191,7 +206,6 @@ fun SplitTunnelScreen(
             }
 
             if (splitConfig.mode != SplitTunnelMode.DISABLED) {
-                // App list
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -207,17 +221,7 @@ fun SplitTunnelScreen(
                                 checked = app.isSelected,
                                 onCheckedChange = { viewModel.toggleApp(app.packageName) }
                             )
-                            app.icon?.let { icon ->
-                                AndroidView(
-                                    factory = { ctx ->
-                                        android.widget.ImageView(ctx).apply {
-                                            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                                        }
-                                    },
-                                    update = { it.setImageDrawable(icon) },
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
+                            AppIcon(packageName = app.packageName)
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(
@@ -235,7 +239,6 @@ fun SplitTunnelScreen(
                 }
             }
 
-            // Save button
             Button(
                 onClick = { viewModel.save() },
                 modifier = Modifier
@@ -245,5 +248,61 @@ fun SplitTunnelScreen(
                 Text(stringResource(R.string.save))
             }
         }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text(stringResource(R.string.discard_changes_title)) },
+            text = { Text(stringResource(R.string.discard_changes_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    navController.popBackStack()
+                }) {
+                    Text(stringResource(R.string.discard), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Loads the launcher icon for [packageName] off the main thread on first
+ * composition, and only for items currently visible in the LazyColumn. Items
+ * scrolled offscreen are disposed and their drawable becomes GC-eligible.
+ * Replaces the previous eager load of every app icon into the viewmodel,
+ * which pinned tens of MB on device startup.
+ */
+@Composable
+private fun AppIcon(packageName: String) {
+    val context = LocalContext.current
+    val drawable by produceState<Drawable?>(initialValue = null, key1 = packageName) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                context.packageManager.getApplicationIcon(packageName)
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+    val current = drawable
+    if (current != null) {
+        AndroidView(
+            factory = { ctx ->
+                android.widget.ImageView(ctx).apply {
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                }
+            },
+            update = { it.setImageDrawable(current) },
+            modifier = Modifier.size(36.dp)
+        )
+    } else {
+        Spacer(Modifier.size(36.dp))
     }
 }

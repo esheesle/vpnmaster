@@ -20,13 +20,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,14 +47,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import net.swlr.vpnmaster.R
-import net.swlr.vpnmaster.data.model.IkeV2AuthMethod
-import net.swlr.vpnmaster.data.model.IkeV2Config
-import net.swlr.vpnmaster.data.model.VpnType
 import net.swlr.vpnmaster.data.model.WireGuardConfig
 import net.swlr.vpnmaster.data.model.WireGuardPeer
 import net.swlr.vpnmaster.ui.navigation.Routes
@@ -80,6 +77,17 @@ fun ProfileEditScreen(
 
     LaunchedEffect(profileId) {
         viewModel.loadProfile(profileId)
+    }
+
+    val currentEntry = navController.currentBackStackEntry
+    LaunchedEffect(currentEntry) {
+        val handle = currentEntry?.savedStateHandle ?: return@LaunchedEffect
+        handle.getStateFlow<String?>("qr_data", null).collect { qrData ->
+            if (qrData != null) {
+                viewModel.importFromQrCode(qrData)
+                handle.remove<String>("qr_data")
+            }
+        }
     }
 
     LaunchedEffect(uiMessage) {
@@ -122,7 +130,6 @@ fun ProfileEditScreen(
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Import buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -147,7 +154,6 @@ fun ProfileEditScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // Profile name
             OutlinedTextField(
                 value = currentProfile.name,
                 onValueChange = { viewModel.updateEditingProfile(currentProfile.copy(name = it)) },
@@ -158,15 +164,6 @@ fun ProfileEditScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // VPN type selector
-            VpnTypeSelector(
-                selected = currentProfile.type,
-                onSelect = { viewModel.changeVpnType(it) }
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Server address
             OutlinedTextField(
                 value = currentProfile.serverAddress,
                 onValueChange = { viewModel.updateEditingProfile(currentProfile.copy(serverAddress = it)) },
@@ -177,21 +174,12 @@ fun ProfileEditScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // Type-specific config
-            when (currentProfile.type) {
-                VpnType.WIREGUARD -> WireGuardConfigForm(
-                    config = currentProfile.wireGuardConfig ?: WireGuardConfig(),
-                    onConfigChange = {
-                        viewModel.updateEditingProfile(currentProfile.copy(wireGuardConfig = it))
-                    }
-                )
-                VpnType.IKEV2 -> IkeV2ConfigForm(
-                    config = currentProfile.ikeV2Config ?: IkeV2Config(),
-                    onConfigChange = {
-                        viewModel.updateEditingProfile(currentProfile.copy(ikeV2Config = it))
-                    }
-                )
-            }
+            WireGuardConfigForm(
+                config = currentProfile.wireGuardConfig ?: WireGuardConfig(),
+                onConfigChange = {
+                    viewModel.updateEditingProfile(currentProfile.copy(wireGuardConfig = it))
+                }
+            )
 
             Spacer(Modifier.height(24.dp))
 
@@ -207,36 +195,6 @@ fun ProfileEditScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun VpnTypeSelector(selected: VpnType, onSelect: (VpnType) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
-            value = when (selected) {
-                VpnType.WIREGUARD -> "WireGuard"
-                VpnType.IKEV2 -> "IKEv2 / IPsec"
-            },
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(stringResource(R.string.vpn_type)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.fillMaxWidth().menuAnchor()
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text("WireGuard") },
-                onClick = { onSelect(VpnType.WIREGUARD); expanded = false }
-            )
-            DropdownMenuItem(
-                text = { Text("IKEv2 / IPsec") },
-                onClick = { onSelect(VpnType.IKEV2); expanded = false }
-            )
-        }
-    }
-}
-
 @Composable
 private fun WireGuardConfigForm(config: WireGuardConfig, onConfigChange: (WireGuardConfig) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -248,37 +206,26 @@ private fun WireGuardConfigForm(config: WireGuardConfig, onConfigChange: (WireGu
             )
             Spacer(Modifier.height(8.dp))
 
-            OutlinedTextField(
+            SecretField(
                 value = config.privateKey,
                 onValueChange = { onConfigChange(config.copy(privateKey = it)) },
-                label = { Text(stringResource(R.string.wg_private_key)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
+                label = stringResource(R.string.wg_private_key)
             )
 
             Spacer(Modifier.height(8.dp))
 
-            OutlinedTextField(
-                value = config.addresses.joinToString(", "),
-                onValueChange = {
-                    onConfigChange(config.copy(addresses = it.split(",").map { s -> s.trim() }))
-                },
-                label = { Text(stringResource(R.string.wg_addresses)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+            CsvListField(
+                initial = config.addresses,
+                onListChange = { onConfigChange(config.copy(addresses = it)) },
+                label = stringResource(R.string.wg_addresses)
             )
 
             Spacer(Modifier.height(8.dp))
 
-            OutlinedTextField(
-                value = config.dnsServers.joinToString(", "),
-                onValueChange = {
-                    onConfigChange(config.copy(dnsServers = it.split(",").map { s -> s.trim() }))
-                },
-                label = { Text(stringResource(R.string.wg_dns_servers)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+            CsvListField(
+                initial = config.dnsServers,
+                onListChange = { onConfigChange(config.copy(dnsServers = it)) },
+                label = stringResource(R.string.wg_dns_servers)
             )
 
             Spacer(Modifier.height(8.dp))
@@ -310,7 +257,6 @@ private fun WireGuardConfigForm(config: WireGuardConfig, onConfigChange: (WireGu
 
     Spacer(Modifier.height(12.dp))
 
-    // Peers
     config.peers.forEachIndexed { index, peer ->
         PeerForm(
             peer = peer,
@@ -379,13 +325,10 @@ private fun PeerForm(
 
             Spacer(Modifier.height(8.dp))
 
-            OutlinedTextField(
+            SecretField(
                 value = peer.preSharedKey ?: "",
                 onValueChange = { onPeerChange(peer.copy(preSharedKey = it.ifBlank { null })) },
-                label = { Text(stringResource(R.string.wg_peer_preshared_key)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
+                label = stringResource(R.string.wg_peer_preshared_key)
             )
 
             Spacer(Modifier.height(8.dp))
@@ -400,14 +343,10 @@ private fun PeerForm(
 
             Spacer(Modifier.height(8.dp))
 
-            OutlinedTextField(
-                value = peer.allowedIPs.joinToString(", "),
-                onValueChange = {
-                    onPeerChange(peer.copy(allowedIPs = it.split(",").map { s -> s.trim() }))
-                },
-                label = { Text(stringResource(R.string.wg_peer_allowed_ips)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+            CsvListField(
+                initial = peer.allowedIPs,
+                onListChange = { onPeerChange(peer.copy(allowedIPs = it)) },
+                label = stringResource(R.string.wg_peer_allowed_ips)
             )
 
             Spacer(Modifier.height(8.dp))
@@ -415,7 +354,7 @@ private fun PeerForm(
             OutlinedTextField(
                 value = peer.persistentKeepalive?.toString() ?: "",
                 onValueChange = { onPeerChange(peer.copy(persistentKeepalive = it.toIntOrNull())) },
-                label = { Text(stringResource(R.string.wg_peer_keepalive)) },
+                label = { Text(stringResource(R.string.wg_peer_keepalive) + " (default: 25)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -424,164 +363,71 @@ private fun PeerForm(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Editable text field whose displayed value is the user's raw input, not the
+ * round-trip of `list.split(",").joinToString(", ")`. Splitting on every keystroke
+ * caused the cursor to jump and made trailing commas/spaces unrepresentable.
+ * The parent receives the parsed list only on each edit (which is fine — round
+ * tripping the *internal* state is the only thing we needed to avoid).
+ */
 @Composable
-private fun IkeV2ConfigForm(config: IkeV2Config, onConfigChange: (IkeV2Config) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "IKEv2 Configuration",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(8.dp))
+private fun CsvListField(
+    initial: List<String>,
+    onListChange: (List<String>) -> Unit,
+    label: String
+) {
+    // Local text is the source of truth while the user is typing — that's what
+    // makes "10.0.0.1, " (trailing space) representable without the cursor jumping
+    // back. If the *parent* swaps in a list that disagrees with what our local
+    // text would parse to (e.g. config import populated the field from elsewhere),
+    // resync — but only then. The previous remember(joined) reset on every
+    // keystroke because parsing+rejoining the user's text rarely round-trips
+    // exactly to the typed string.
+    var text by remember { mutableStateOf(initial.joinToString(", ")) }
+    val parsed = text.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    LaunchedEffect(initial) {
+        if (initial != parsed) text = initial.joinToString(", ")
+    }
 
-            // Auth method selector
-            var authExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = authExpanded, onExpandedChange = { authExpanded = it }) {
-                OutlinedTextField(
-                    value = when (config.authMethod) {
-                        IkeV2AuthMethod.CERTIFICATE -> "Certificate"
-                        IkeV2AuthMethod.EAP -> "EAP (Username/Password)"
-                        IkeV2AuthMethod.CERTIFICATE_AND_EAP -> "Certificate + EAP"
-                    },
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(stringResource(R.string.ikev2_auth_method)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(authExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
-                )
-                ExposedDropdownMenu(expanded = authExpanded, onDismissRequest = { authExpanded = false }) {
-                    IkeV2AuthMethod.entries.forEach { method ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    when (method) {
-                                        IkeV2AuthMethod.CERTIFICATE -> "Certificate"
-                                        IkeV2AuthMethod.EAP -> "EAP (Username/Password)"
-                                        IkeV2AuthMethod.CERTIFICATE_AND_EAP -> "Certificate + EAP"
-                                    }
-                                )
-                            },
-                            onClick = {
-                                onConfigChange(config.copy(authMethod = method))
-                                authExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
+    OutlinedTextField(
+        value = text,
+        onValueChange = {
+            text = it
+            onListChange(it.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() })
+        },
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = false,
+        minLines = 1,
+        maxLines = 4
+    )
+}
 
-            Spacer(Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = config.remoteId ?: "",
-                onValueChange = { onConfigChange(config.copy(remoteId = it.ifBlank { null })) },
-                label = { Text(stringResource(R.string.ikev2_remote_id)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = config.localId ?: "",
-                onValueChange = { onConfigChange(config.copy(localId = it.ifBlank { null })) },
-                label = { Text(stringResource(R.string.ikev2_local_id)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            // EAP fields
-            if (config.authMethod == IkeV2AuthMethod.EAP ||
-                config.authMethod == IkeV2AuthMethod.CERTIFICATE_AND_EAP
-            ) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = config.username ?: "",
-                    onValueChange = { onConfigChange(config.copy(username = it.ifBlank { null })) },
-                    label = { Text(stringResource(R.string.ikev2_username)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = config.password ?: "",
-                    onValueChange = { onConfigChange(config.copy(password = it.ifBlank { null })) },
-                    label = { Text(stringResource(R.string.ikev2_password)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation()
-                )
-            }
-
-            // Advanced: Handshake & Tunnel Settings
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = "Handshake & Tunnel",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = config.ikeProposal ?: "",
-                onValueChange = { onConfigChange(config.copy(ikeProposal = it.ifBlank { null })) },
-                label = { Text(stringResource(R.string.ikev2_ike_proposal)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = config.espProposal ?: "",
-                onValueChange = { onConfigChange(config.copy(espProposal = it.ifBlank { null })) },
-                label = { Text(stringResource(R.string.ikev2_esp_proposal)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = config.mtu?.toString() ?: "",
-                onValueChange = { onConfigChange(config.copy(mtu = it.toIntOrNull())) },
-                label = { Text("MTU (default: 1400)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = config.dpdDelaySeconds?.toString() ?: "",
-                onValueChange = { onConfigChange(config.copy(dpdDelaySeconds = it.toIntOrNull())) },
-                label = { Text("DPD Interval, seconds (default: 30)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = config.rekeyIkeMinutes?.toString() ?: "",
-                    onValueChange = { onConfigChange(config.copy(rekeyIkeMinutes = it.toIntOrNull())) },
-                    label = { Text("IKE Rekey, min (default: 240)") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-                OutlinedTextField(
-                    value = config.rekeyEspMinutes?.toString() ?: "",
-                    onValueChange = { onConfigChange(config.copy(rekeyEspMinutes = it.toIntOrNull())) },
-                    label = { Text("ESP Rekey, min (default: 60)") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+/**
+ * Password-masked text field with a reveal toggle. Pasting a 44-char base64 key
+ * is otherwise unverifiable.
+ */
+@Composable
+private fun SecretField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String
+) {
+    var revealed by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { revealed = !revealed }) {
+                Icon(
+                    imageVector = if (revealed) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (revealed) "Hide" else "Show"
                 )
             }
         }
-    }
+    )
 }

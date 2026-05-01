@@ -4,20 +4,13 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 enum class VpnType {
-    WIREGUARD,
-    IKEV2
+    WIREGUARD
 }
 
 enum class SplitTunnelMode {
     DISABLED,
     EXCLUDE_APPS,
     INCLUDE_APPS
-}
-
-enum class IkeV2AuthMethod {
-    CERTIFICATE,
-    EAP,
-    CERTIFICATE_AND_EAP
 }
 
 @Serializable
@@ -40,23 +33,6 @@ data class WireGuardPeer(
 )
 
 @Serializable
-data class IkeV2Config(
-    val remoteId: String? = null,
-    val localId: String? = null,
-    val authMethod: IkeV2AuthMethod = IkeV2AuthMethod.EAP,
-    val username: String? = null,
-    val password: String? = null,
-    val certificateAlias: String? = null,
-    val caCertificateAlias: String? = null,
-    val ikeProposal: String? = null,
-    val espProposal: String? = null,
-    val mtu: Int? = null,
-    val dpdDelaySeconds: Int? = null,
-    val rekeyIkeMinutes: Int? = null,
-    val rekeyEspMinutes: Int? = null
-)
-
-@Serializable
 data class SplitTunnelConfig(
     val mode: SplitTunnelMode = SplitTunnelMode.DISABLED,
     val appPackages: Set<String> = emptySet(),
@@ -70,7 +46,6 @@ data class VpnProfile(
     val type: VpnType = VpnType.WIREGUARD,
     val serverAddress: String = "",
     val wireGuardConfig: WireGuardConfig? = null,
-    val ikeV2Config: IkeV2Config? = null,
     val splitTunnelConfig: SplitTunnelConfig = SplitTunnelConfig(),
     val isDefault: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
@@ -79,6 +54,5 @@ data class VpnProfile(
     val displayType: String
         get() = when (type) {
             VpnType.WIREGUARD -> "WireGuard"
-            VpnType.IKEV2 -> "IKEv2/IPsec"
         }
 }

@@ -3,7 +3,6 @@ package net.swlr.vpnmaster.viewmodel
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,10 +18,15 @@ import net.swlr.vpnmaster.data.model.SplitTunnelMode
 import net.swlr.vpnmaster.data.repository.ProfileRepository
 import javax.inject.Inject
 
+/**
+ * Lightweight handle to an installed app. Drawables are NOT held here — loading
+ * one drawable per installed app eagerly held tens of MB of bitmap data and
+ * pinned PackageManager Resources references. Icons are now loaded lazily by
+ * the composable as items scroll into view.
+ */
 data class AppInfo(
     val packageName: String,
     val label: String,
-    val icon: Drawable?,
     val isSystem: Boolean,
     val isSelected: Boolean = false
 )
@@ -48,7 +52,13 @@ class SplitTunnelViewModel @Inject constructor(
     private val _uiMessage = MutableStateFlow<String?>(null)
     val uiMessage: StateFlow<String?> = _uiMessage.asStateFlow()
 
+    // True when the in-memory _splitConfig differs from what's on disk. The
+    // composable observes this to put up a "Discard changes?" guard on back-press.
+    private val _isDirty = MutableStateFlow(false)
+    val isDirty: StateFlow<Boolean> = _isDirty.asStateFlow()
+
     private var profileId: String = ""
+    private var savedConfig: SplitTunnelConfig = SplitTunnelConfig()
     private var allApps: List<AppInfo> = emptyList()
 
     fun loadProfile(profileId: String) {
@@ -56,6 +66,8 @@ class SplitTunnelViewModel @Inject constructor(
         viewModelScope.launch {
             val profile = profileRepository.getProfileById(profileId) ?: return@launch
             _splitConfig.value = profile.splitTunnelConfig
+            savedConfig = profile.splitTunnelConfig
+            _isDirty.value = false
 
             loadInstalledApps(profile.splitTunnelConfig.appPackages)
         }
@@ -64,13 +76,16 @@ class SplitTunnelViewModel @Inject constructor(
     private suspend fun loadInstalledApps(selectedPackages: Set<String>) {
         withContext(Dispatchers.IO) {
             val pm = context.packageManager
-            val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            val packages = try {
+                pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            } catch (_: Exception) {
+                emptyList()
+            }
 
             allApps = packages.map { appInfo ->
                 AppInfo(
                     packageName = appInfo.packageName,
                     label = appInfo.loadLabel(pm).toString(),
-                    icon = try { appInfo.loadIcon(pm) } catch (_: Exception) { null },
                     isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
                     isSelected = appInfo.packageName in selectedPackages
                 )
@@ -82,6 +97,7 @@ class SplitTunnelViewModel @Inject constructor(
 
     fun setMode(mode: SplitTunnelMode) {
         _splitConfig.value = _splitConfig.value.copy(mode = mode)
+        markDirty()
     }
 
     fun toggleApp(packageName: String) {
@@ -98,6 +114,7 @@ class SplitTunnelViewModel @Inject constructor(
             if (it.packageName == packageName) it.copy(isSelected = !it.isSelected) else it
         }
         filterApps()
+        markDirty()
     }
 
     fun setShowSystemApps(show: Boolean) {
@@ -113,11 +130,13 @@ class SplitTunnelViewModel @Inject constructor(
     fun updateExcludedRoutes(routes: String) {
         val routeList = routes.lines().map { it.trim() }.filter { it.isNotBlank() }
         _splitConfig.value = _splitConfig.value.copy(excludedRoutes = routeList)
+        markDirty()
     }
 
     fun updateIncludedRoutes(routes: String) {
         val routeList = routes.lines().map { it.trim() }.filter { it.isNotBlank() }
         _splitConfig.value = _splitConfig.value.copy(includedRoutes = routeList)
+        markDirty()
     }
 
     fun save() {
@@ -125,12 +144,18 @@ class SplitTunnelViewModel @Inject constructor(
             val profile = profileRepository.getProfileById(profileId) ?: return@launch
             val updated = profile.copy(splitTunnelConfig = _splitConfig.value)
             profileRepository.updateProfile(updated)
+            savedConfig = _splitConfig.value
+            _isDirty.value = false
             _uiMessage.value = "Split tunnel settings saved"
         }
     }
 
     fun clearMessage() {
         _uiMessage.value = null
+    }
+
+    private fun markDirty() {
+        _isDirty.value = _splitConfig.value != savedConfig
     }
 
     private fun filterApps() {

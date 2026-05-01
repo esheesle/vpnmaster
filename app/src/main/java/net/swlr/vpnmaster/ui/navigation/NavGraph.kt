@@ -3,7 +3,7 @@ package net.swlr.vpnmaster.ui.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -22,7 +22,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import net.swlr.vpnmaster.ui.screens.AboutScreen
 import net.swlr.vpnmaster.ui.screens.HomeScreen
+import net.swlr.vpnmaster.ui.screens.LogsScreen
 import net.swlr.vpnmaster.ui.screens.ProfileEditScreen
 import net.swlr.vpnmaster.ui.screens.ProfileListScreen
 import net.swlr.vpnmaster.ui.screens.QrScanScreen
@@ -31,7 +33,7 @@ import net.swlr.vpnmaster.ui.screens.SplitTunnelScreen
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
     data object Home : Screen("home", "Home", Icons.Default.Home)
-    data object Profiles : Screen("profiles", "Profiles", Icons.Default.List)
+    data object Profiles : Screen("profiles", "Profiles", Icons.AutoMirrored.Filled.List)
     data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
@@ -40,6 +42,8 @@ object Routes {
     const val PROFILE_NEW = "profile_new"
     const val SPLIT_TUNNEL = "split_tunnel/{profileId}"
     const val QR_SCAN = "qr_scan"
+    const val LOGS = "logs"
+    const val ABOUT = "about"
 
     fun profileEdit(id: String) = "profile_edit/$id"
     fun splitTunnel(id: String) = "split_tunnel/$id"
@@ -91,7 +95,10 @@ fun AppNavigation() {
                 ProfileListScreen(navController = navController)
             }
             composable(Screen.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(navController = navController)
+            }
+            composable(Routes.LOGS) {
+                LogsScreen(navController = navController)
             }
             composable(Routes.PROFILE_NEW) {
                 ProfileEditScreen(navController = navController, profileId = null)
@@ -112,6 +119,9 @@ fun AppNavigation() {
             }
             composable(Routes.QR_SCAN) {
                 QrScanScreen(navController = navController)
+            }
+            composable(Routes.ABOUT) {
+                AboutScreen(navController = navController)
             }
         }
     }
