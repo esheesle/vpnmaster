@@ -40,6 +40,7 @@ data class SplitTunnelConfig(
     val includedRoutes: List<String> = emptyList()
 )
 
+@Serializable
 data class VpnProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "",

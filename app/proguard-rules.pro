@@ -17,6 +17,9 @@
 -keepclasseswithmembers class net.swlr.vpnmaster.data.model.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+-keepclasseswithmembers class net.swlr.vpnmaster.backup.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
 
 # Hilt
 -keep class dagger.hilt.** { *; }
