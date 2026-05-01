@@ -130,6 +130,20 @@
     <string name="tasker_actions_title">Intent Actions</string>
     <string name="tasker_actions_help">Start:\n  Action: net.swlr.vpnmaster.action.START_TUNNEL\n  Extra: profile_id:&lt;id&gt;\n  or: profile_name:&lt;name&gt;\n\nStop:\n  Action: net.swlr.vpnmaster.action.STOP_TUNNEL\n\nList:\n  Action: net.swlr.vpnmaster.action.LIST_PROFILES</string>
 
+    <!-- Backup &amp; Restore -->
+    <string name="backup_title">Backup &amp; Restore</string>
+    <string name="backup_desc">Export all profiles and settings to an encrypted file. Imports replace all existing profiles. Settings present in the backup are overwritten; others are kept.</string>
+    <string name="backup_export">Export backup</string>
+    <string name="backup_import">Import backup</string>
+    <string name="backup_password_export_title">Set backup password</string>
+    <string name="backup_password_import_title">Enter backup password</string>
+    <string name="backup_password_label">Password</string>
+    <string name="backup_password_confirm_label">Confirm password</string>
+    <string name="backup_password_mismatch">Passwords do not match</string>
+    <string name="backup_password_required">Password is required</string>
+    <string name="backup_warn_overwrite">Importing will replace all existing profiles. Continue?</string>
+    <string name="backup_default_filename">vpnmaster-backup</string>
+
     <!-- Common -->
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>

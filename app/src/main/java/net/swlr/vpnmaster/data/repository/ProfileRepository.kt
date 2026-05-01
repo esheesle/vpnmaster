@@ -2,6 +2,7 @@ package net.swlr.vpnmaster.data.repository
 
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -75,6 +76,17 @@ class ProfileRepository @Inject constructor(
 
     suspend fun deleteProfile(profile: VpnProfile) {
         profileDao.deleteProfile(profile.toEntity())
+    }
+
+    suspend fun replaceAllProfiles(profiles: List<VpnProfile>) {
+        profileDao.replaceAll(profiles.map { it.toEntity() })
+    }
+
+    suspend fun getAllProfilesSnapshot(): List<VpnProfile> {
+        return profileDao.getAllProfiles().first()
+            .mapNotNull {
+                try { it.toDomain() } catch (e: Exception) { null }
+            }
     }
 
     suspend fun setDefaultProfile(profileId: String) {

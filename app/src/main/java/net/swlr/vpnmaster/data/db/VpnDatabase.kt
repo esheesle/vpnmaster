@@ -64,6 +64,18 @@ abstract class VpnProfileDao {
 
     @Query("SELECT COUNT(*) FROM vpn_profiles")
     abstract suspend fun getProfileCount(): Int
+
+    @Query("DELETE FROM vpn_profiles")
+    abstract suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun insertAll(profiles: List<VpnProfileEntity>)
+
+    @Transaction
+    open suspend fun replaceAll(profiles: List<VpnProfileEntity>) {
+        deleteAll()
+        insertAll(profiles)
+    }
 }
 
 @Database(entities = [VpnProfileEntity::class], version = 1, exportSchema = true)
