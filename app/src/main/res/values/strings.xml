@@ -31,7 +31,6 @@
     <string name="profile_name">Profile Name</string>
     <string name="vpn_type">VPN Type</string>
     <string name="vpn_type_wireguard">WireGuard</string>
-    <string name="vpn_type_ikev2">IKEv2 / IPsec</string>
     <string name="server_address">Server Address</string>
     <string name="import_file">Import from File</string>
     <string name="import_qr">Scan QR Code</string>
@@ -39,6 +38,14 @@
     <string name="profile_saved">Profile saved</string>
     <string name="profile_deleted">Profile deleted</string>
     <string name="set_as_default">Set as default</string>
+    <string name="clear_default">Clear default</string>
+    <string name="duplicate_profile">Duplicate</string>
+    <string name="export_profile">Export / share .conf</string>
+    <string name="discard_changes_title">Discard changes?</string>
+    <string name="discard_changes_message">You have unsaved split-tunnel changes. Discard them?</string>
+    <string name="discard">Discard</string>
+    <string name="logs_filter_tag">Filter tag</string>
+    <string name="logs_filter_level">Level</string>
 
     <!-- WireGuard Config -->
     <string name="wg_private_key">Private Key</string>
@@ -57,25 +64,6 @@
     <string name="wg_add_peer">Add Peer</string>
     <string name="wg_remove_peer">Remove Peer</string>
 
-    <!-- IKEv2 Config -->
-    <string name="ikev2_remote_id">Remote Identity (optional)</string>
-    <string name="ikev2_local_id">Local Identity (optional)</string>
-    <string name="ikev2_auth_method">Authentication Method</string>
-    <string name="ikev2_auth_certificate">Certificate</string>
-    <string name="ikev2_auth_eap">EAP (Username/Password)</string>
-    <string name="ikev2_auth_cert_and_eap">Certificate + EAP</string>
-    <string name="ikev2_username">Username</string>
-    <string name="ikev2_password">Password</string>
-    <string name="ikev2_import_cert">Import User Certificate (.p12)</string>
-    <string name="ikev2_import_ca">Import CA Certificate</string>
-    <string name="ikev2_cert_password">Certificate Password</string>
-    <string name="ikev2_ike_proposal">IKE Proposal (optional)</string>
-    <string name="ikev2_esp_proposal">ESP Proposal (optional)</string>
-    <string name="ikev2_mtu">MTU</string>
-    <string name="ikev2_dpd_delay">DPD Interval (seconds)</string>
-    <string name="ikev2_rekey_ike">IKE Rekey Interval (minutes)</string>
-    <string name="ikev2_rekey_esp">ESP Rekey Interval (minutes)</string>
-
     <!-- Split Tunnel -->
     <string name="split_tunnel_title">Split Tunneling</string>
     <string name="split_tunnel_mode">Split Tunnel Mode</string>
@@ -91,13 +79,15 @@
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
-    <string name="always_on_vpn">Always-on VPN</string>
-    <string name="always_on_vpn_desc">Enable in Android system settings</string>
-    <string name="always_on_vpn_instructions">To enable Always-on VPN:\n\n1. Open Android Settings\n2. Go to Network &amp; Internet → VPN\n3. Tap the gear icon next to VPN Master\n4. Enable \"Always-on VPN\"</string>
+    <string name="always_on_vpn">Always-on VPN &amp; kill switch</string>
+    <string name="always_on_vpn_desc">Prevents traffic from leaking to the physical network when the tunnel is down. Both toggles must be set in Android system settings — the app cannot enforce this itself.</string>
+    <string name="always_on_vpn_instructions">For full leak protection:\n\n1. Open Android Settings\n2. Go to Network &amp; Internet → VPN\n3. Tap the gear icon next to VPN Master\n4. Enable \"Always-on VPN\"\n5. Enable \"Block connections without VPN\"\n\nStep 5 is the kill switch. Without it, traffic can leak to the physical network during reconnect backoff, on boot before the tunnel comes up, or if the tunnel fails.</string>
     <string name="open_vpn_settings">Open VPN Settings</string>
     <string name="watchdog_enabled">Connection Watchdog</string>
     <string name="watchdog_desc">Automatically reconnect on failure</string>
     <string name="watchdog_interval">Check Interval</string>
+    <string name="watchdog_probe_failures">Probe Failures Before Reconnect</string>
+    <string name="watchdog_probe_failures_desc">Active probe attempts (2s apart) on a stalled tunnel before reconnecting. Lower = faster recovery, higher = more tolerant of brief link blips.</string>
     <string name="auto_connect_boot">Auto-connect on Boot</string>
     <string name="auto_connect_boot_desc">Connect VPN when device starts</string>
 
@@ -115,6 +105,30 @@
     <string name="notification_connecting">Connecting to %s…</string>
     <string name="notification_disconnected">VPN Disconnected</string>
     <string name="notification_action_disconnect">Disconnect</string>
+
+    <!-- Alert notifications -->
+    <string name="notification_channel_alert_connect">Connection failed</string>
+    <string name="notification_channel_alert_connect_desc">When a manual, boot, or Tasker-triggered connect fails after all retries.</string>
+    <string name="notification_channel_alert_recovery">Recovery failed</string>
+    <string name="notification_channel_alert_recovery_desc">When background recovery (watchdog, network change) fails its first attempt after the tunnel was up.</string>
+    <string name="alert_connect_failed_title">VPN connection failed</string>
+    <string name="alert_connect_failed_body">Could not connect to %1$s after %2$d attempts. %3$s</string>
+    <string name="alert_recovery_failed_title">VPN recovery failed</string>
+    <string name="alert_recovery_failed_body">%1$s lost connection and the first reconnect attempt failed. %2$s</string>
+
+    <!-- Quick Settings Tile -->
+    <string name="tile_connected">VPN Connected</string>
+    <string name="tile_connecting">VPN Connecting…</string>
+    <string name="tile_disconnecting">VPN Disconnecting…</string>
+    <string name="tile_disconnected">VPN Off</string>
+    <string name="tile_error">VPN Error</string>
+
+    <!-- Tasker Integration -->
+    <string name="tasker_integration">Automation (Tasker)</string>
+    <string name="tasker_integration_desc">Control VPN tunnels from Tasker, Automate, or other automation apps using broadcast intents. Tap a profile to copy its ID.</string>
+    <string name="tasker_profile_ids">Profile IDs</string>
+    <string name="tasker_actions_title">Intent Actions</string>
+    <string name="tasker_actions_help">Start:\n  Action: net.swlr.vpnmaster.action.START_TUNNEL\n  Extra: profile_id:&lt;id&gt;\n  or: profile_name:&lt;name&gt;\n\nStop:\n  Action: net.swlr.vpnmaster.action.STOP_TUNNEL\n\nList:\n  Action: net.swlr.vpnmaster.action.LIST_PROFILES</string>
 
     <!-- Common -->
     <string name="ok">OK</string>

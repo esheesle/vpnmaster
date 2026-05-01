@@ -42,22 +42,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import net.swlr.vpnmaster.R
-import net.swlr.vpnmaster.viewmodel.ProfileViewModel
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QrScanScreen(
-    navController: NavController,
-    viewModel: ProfileViewModel = hiltViewModel()
+    navController: NavController
 ) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
@@ -101,7 +98,9 @@ fun QrScanScreen(
             if (hasCameraPermission) {
                 QrCameraPreview(
                     onQrCodeDetected = { data ->
-                        viewModel.importFromQrCode(data)
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("qr_data", data)
                         navController.popBackStack()
                     }
                 )
@@ -144,7 +143,6 @@ fun QrScanScreen(
 @Composable
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 private fun QrCameraPreview(onQrCodeDetected: (String) -> Unit) {
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var hasDetected by remember { mutableStateOf(false) }
 
@@ -189,11 +187,13 @@ private fun QrCameraPreview(onQrCodeDetected: (String) -> Unit) {
                                 scanner.process(image)
                                     .addOnSuccessListener { barcodes ->
                                         for (barcode in barcodes) {
-                                            barcode.rawValue?.let { value ->
-                                                if (!hasDetected) {
-                                                    hasDetected = true
-                                                    onQrCodeDetected(value)
-                                                }
+                                            // Prefer rawValue; fall back to decoding rawBytes
+                                            // for QR codes where ML Kit can't produce rawValue
+                                            val value = barcode.rawValue
+                                                ?: barcode.rawBytes?.toString(Charsets.UTF_8)
+                                            if (value != null && !hasDetected) {
+                                                hasDetected = true
+                                                onQrCodeDetected(value)
                                             }
                                         }
                                     }

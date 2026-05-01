@@ -23,9 +23,11 @@ class SettingsRepository @Inject constructor(
     private object Keys {
         val WATCHDOG_ENABLED = booleanPreferencesKey("watchdog_enabled")
         val WATCHDOG_INTERVAL_SECONDS = intPreferencesKey("watchdog_interval_seconds")
+        val WATCHDOG_PROBE_MAX_FAILURES = intPreferencesKey("watchdog_probe_max_failures")
         val AUTO_CONNECT_ON_BOOT = booleanPreferencesKey("auto_connect_on_boot")
         val ACTIVE_PROFILE_ID = stringPreferencesKey("active_profile_id")
         val LAST_CONNECTED_PROFILE_ID = stringPreferencesKey("last_connected_profile_id")
+        val DIAGNOSTIC_LOGGING_ENABLED = booleanPreferencesKey("diagnostic_logging_enabled")
     }
 
     val watchdogEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -34,6 +36,10 @@ class SettingsRepository @Inject constructor(
 
     val watchdogIntervalSeconds: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[Keys.WATCHDOG_INTERVAL_SECONDS] ?: 30
+    }
+
+    val watchdogProbeMaxFailures: Flow<Int> = context.dataStore.data.map { prefs ->
+        (prefs[Keys.WATCHDOG_PROBE_MAX_FAILURES] ?: 3).coerceIn(1, 10)
     }
 
     val autoConnectOnBoot: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -48,12 +54,20 @@ class SettingsRepository @Inject constructor(
         prefs[Keys.LAST_CONNECTED_PROFILE_ID]
     }
 
+    val diagnosticLoggingEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.DIAGNOSTIC_LOGGING_ENABLED] ?: true
+    }
+
     suspend fun setWatchdogEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.WATCHDOG_ENABLED] = enabled }
     }
 
     suspend fun setWatchdogIntervalSeconds(seconds: Int) {
         context.dataStore.edit { it[Keys.WATCHDOG_INTERVAL_SECONDS] = seconds }
+    }
+
+    suspend fun setWatchdogProbeMaxFailures(count: Int) {
+        context.dataStore.edit { it[Keys.WATCHDOG_PROBE_MAX_FAILURES] = count.coerceIn(1, 10) }
     }
 
     suspend fun setAutoConnectOnBoot(enabled: Boolean) {
@@ -68,6 +82,10 @@ class SettingsRepository @Inject constructor(
                 it.remove(Keys.ACTIVE_PROFILE_ID)
             }
         }
+    }
+
+    suspend fun setDiagnosticLoggingEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.DIAGNOSTIC_LOGGING_ENABLED] = enabled }
     }
 
     suspend fun setLastConnectedProfileId(profileId: String?) {

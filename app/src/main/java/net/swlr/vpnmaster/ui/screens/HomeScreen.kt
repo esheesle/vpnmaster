@@ -88,7 +88,10 @@ fun HomeScreen(
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showSnackbar(
+                message = it,
+                withDismissAction = true
+            )
             viewModel.clearError()
         }
     }
@@ -145,7 +148,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             // Profile selector
-            if (profiles.isNotEmpty() && vpnState == VpnState.DISCONNECTED) {
+            if (profiles.isNotEmpty() && (vpnState == VpnState.DISCONNECTED || vpnState == VpnState.ERROR)) {
                 ProfileSelector(
                     profiles = profiles,
                     selected = selectedProfile ?: defaultProfile,
@@ -171,6 +174,7 @@ fun HomeScreen(
             val isTransitioning = vpnState == VpnState.CONNECTING ||
                     vpnState == VpnState.DISCONNECTING ||
                     vpnState == VpnState.RECONNECTING
+            val canConnect = vpnState == VpnState.DISCONNECTED || vpnState == VpnState.ERROR
 
             Button(
                 onClick = {
@@ -185,7 +189,7 @@ fun HomeScreen(
                         }
                     }
                 },
-                enabled = !isTransitioning && (isConnected || selectedProfile != null || defaultProfile != null),
+                enabled = !isTransitioning && (isConnected || canConnect) && (isConnected || selectedProfile != null || defaultProfile != null),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -246,23 +250,37 @@ private fun StatusOrb(state: VpnState) {
         label = "orb_scale"
     )
 
+    // Three concentric circles, each in its own Box so the modifier chain on the
+    // outer box doesn't shrink the inner ones. The previous chained
+    // background/padding/background/padding/background composed visually but
+    // clipped the icon on smaller screens.
     Box(
-        modifier = Modifier
-            .size(120.dp)
-            .scale(scale)
-            .background(color.copy(alpha = 0.15f), CircleShape)
-            .padding(20.dp)
-            .background(color.copy(alpha = 0.3f), CircleShape)
-            .padding(16.dp)
-            .background(color, CircleShape),
+        modifier = Modifier.size(120.dp).scale(scale),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = if (state == VpnState.CONNECTED) Icons.Default.Lock else Icons.Default.LockOpen,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(32.dp)
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .background(color.copy(alpha = 0.15f), CircleShape)
         )
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .background(color.copy(alpha = 0.3f), CircleShape)
+        )
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(color, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (state == VpnState.CONNECTED) Icons.Default.Lock else Icons.Default.LockOpen,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
+        }
     }
 }
 
@@ -378,11 +396,11 @@ private fun StatItem(label: String, value: String) {
 private fun formatBytes(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
     val kb = bytes / 1024.0
-    if (kb < 1024) return "%.1f KB".format(kb)
+    if (kb < 1024) return "%.1f KB".format(java.util.Locale.ROOT, kb)
     val mb = kb / 1024.0
-    if (mb < 1024) return "%.1f MB".format(mb)
+    if (mb < 1024) return "%.1f MB".format(java.util.Locale.ROOT, mb)
     val gb = mb / 1024.0
-    return "%.2f GB".format(gb)
+    return "%.2f GB".format(java.util.Locale.ROOT, gb)
 }
 
 private fun formatDuration(millis: Long): String {
@@ -390,6 +408,6 @@ private fun formatDuration(millis: Long): String {
     val h = seconds / 3600
     val m = (seconds % 3600) / 60
     val s = seconds % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s)
-    else "%02d:%02d".format(m, s)
+    return if (h > 0) "%d:%02d:%02d".format(java.util.Locale.ROOT, h, m, s)
+    else "%02d:%02d".format(java.util.Locale.ROOT, m, s)
 }

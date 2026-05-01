@@ -7,7 +7,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.swlr.vpnmaster.data.db.VpnProfileDao
 import net.swlr.vpnmaster.data.db.VpnProfileEntity
-import net.swlr.vpnmaster.data.model.IkeV2Config
 import net.swlr.vpnmaster.data.model.SplitTunnelConfig
 import net.swlr.vpnmaster.data.model.VpnProfile
 import net.swlr.vpnmaster.data.model.VpnType
@@ -82,8 +81,25 @@ class ProfileRepository @Inject constructor(
         profileDao.setDefault(profileId)
     }
 
-    private fun VpnProfileEntity.toDomain(): VpnProfile {
-        val vpnType = VpnType.valueOf(type)
+    suspend fun clearDefaultProfile() {
+        profileDao.clearDefaultFlags()
+    }
+
+    /**
+     * Maps a stored profile row to the domain model. Returns null — not throws —
+     * when the row's `type` column is not a known [VpnType]. This happens for
+     * profiles created under older app versions that supported protocols we've
+     * since removed (e.g. IKEv2). Callers filter nulls out so those rows stay in
+     * the database (upgrading back would resurface them) but don't appear in UI
+     * or connect attempts.
+     */
+    private fun VpnProfileEntity.toDomain(): VpnProfile? {
+        val vpnType = try {
+            VpnType.valueOf(type)
+        } catch (e: IllegalArgumentException) {
+            Log.d(TAG, "Dropping profile $id with unsupported type '$type'")
+            return null
+        }
         val configStr = encryptedConfig
 
         val wgConfig = if (vpnType == VpnType.WIREGUARD && configStr.isNotBlank()) {
@@ -91,15 +107,6 @@ class ProfileRepository @Inject constructor(
                 json.decodeFromString<WireGuardConfig>(configStr)
             } catch (e: Exception) {
                 Log.w(TAG, "Corrupt WireGuard config in profile $id, will require reconfiguration", e)
-                null
-            }
-        } else null
-
-        val ikeConfig = if (vpnType == VpnType.IKEV2 && configStr.isNotBlank()) {
-            try {
-                json.decodeFromString<IkeV2Config>(configStr)
-            } catch (e: Exception) {
-                Log.w(TAG, "Corrupt IKEv2 config in profile $id, will require reconfiguration", e)
                 null
             }
         } else null
@@ -117,7 +124,6 @@ class ProfileRepository @Inject constructor(
             type = vpnType,
             serverAddress = serverAddress,
             wireGuardConfig = wgConfig,
-            ikeV2Config = ikeConfig,
             splitTunnelConfig = splitConfig,
             isDefault = isDefault,
             createdAt = createdAt,
@@ -128,7 +134,6 @@ class ProfileRepository @Inject constructor(
     private fun VpnProfile.toEntity(): VpnProfileEntity {
         val configStr = when (type) {
             VpnType.WIREGUARD -> wireGuardConfig?.let { json.encodeToString(it) } ?: ""
-            VpnType.IKEV2 -> ikeV2Config?.let { json.encodeToString(it) } ?: ""
         }
 
         return VpnProfileEntity(
