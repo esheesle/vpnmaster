@@ -124,7 +124,16 @@ class TaskerReceiver : BroadcastReceiver() {
         val serviceIntent = Intent(context, VpnMasterService::class.java).apply {
             action = VpnMasterService.ACTION_DISCONNECT
         }
-        context.startForegroundService(serviceIntent)
+        // Android 12+ throws ForegroundServiceStartNotAllowedException when an
+        // FGS is started from the background without an exemption. Tasker
+        // broadcasts arrive from the background by definition, so the call can
+        // throw here even though the same call inside handleStart's coroutine
+        // is already covered by its broad catch.
+        try {
+            context.startForegroundService(serviceIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to dispatch STOP_TUNNEL — FGS start blocked from background", e)
+        }
     }
 
     private fun handleListProfiles(context: Context) {

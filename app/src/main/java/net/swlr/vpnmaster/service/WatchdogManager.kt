@@ -459,13 +459,31 @@ class WatchdogManager @Inject constructor(
     }
 
     /**
-     * Derive the peer's tunnel-side IP (gateway) from the active profile's first
-     * IPv4 interface address. Convention: peer is the .1 of the user's subnet.
-     * Returns null when not derivable (no IPv4 address, /32 prefix, etc.) — the
-     * caller must fall back to the handshake-age check rather than guessing.
+     * Resolve the active profile's probe target. Prefers an explicit
+     * `probeTarget` configured on the profile so peers that use a non-.1
+     * gateway (e.g. .254 setups, /31 point-to-point links) can opt out of the
+     * convention-based derivation. Falls back to deriving the gateway as the
+     * .1 of the first IPv4 interface address, which matches the common
+     * WireGuard client convention. Returns null when nothing usable is
+     * available; the caller must fall back to the handshake-age check rather
+     * than guessing.
      */
     private fun derivePeerTunnelIp(): InetAddress? {
-        val addresses = orchestrator.activeProfile.value?.wireGuardConfig?.addresses ?: return null
+        val wg = orchestrator.activeProfile.value?.wireGuardConfig ?: return null
+
+        wg.probeTarget?.trim()?.takeIf { it.isNotEmpty() }?.let { override ->
+            if (android.net.InetAddresses.isNumericAddress(override)) {
+                try {
+                    return InetAddress.getByName(override)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Configured probeTarget '$override' failed to parse: ${e.message} — falling back to derivation")
+                }
+            } else {
+                Log.w(TAG, "Configured probeTarget '$override' is not a numeric IP — falling back to derivation")
+            }
+        }
+
+        val addresses = wg.addresses
         for (raw in addresses) {
             val parts = raw.trim().split("/")
             if (parts.size != 2) continue
