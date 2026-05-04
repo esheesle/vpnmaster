@@ -252,6 +252,20 @@ private fun WireGuardConfigForm(config: WireGuardConfig, onConfigChange: (WireGu
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
             }
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = config.probeTarget ?: "",
+                onValueChange = {
+                    val trimmed = it.trim()
+                    onConfigChange(config.copy(probeTarget = trimmed.ifEmpty { null }))
+                },
+                label = { Text(stringResource(R.string.wg_probe_target)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            )
         }
     }
 

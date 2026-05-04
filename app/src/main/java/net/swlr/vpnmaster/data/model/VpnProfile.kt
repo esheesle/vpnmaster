@@ -20,7 +20,13 @@ data class WireGuardConfig(
     val dnsServers: List<String> = emptyList(),
     val listenPort: Int? = null,
     val mtu: Int? = null,
-    val peers: List<WireGuardPeer> = listOf(WireGuardPeer())
+    val peers: List<WireGuardPeer> = listOf(WireGuardPeer()),
+    // Optional override for the watchdog probe target. When null, the watchdog
+    // derives the gateway as the .1 of the client's subnet, which matches the
+    // common WireGuard convention but fails on peers that use a different
+    // gateway (e.g. .254, /31 point-to-point). Any IPv4/IPv6 reachable only
+    // through the tunnel works — the watchdog only cares about rx delta.
+    val probeTarget: String? = null
 )
 
 @Serializable

@@ -54,6 +54,7 @@
     <string name="wg_dns_servers">DNS Servers (comma-separated)</string>
     <string name="wg_listen_port">Listen Port (optional)</string>
     <string name="wg_mtu">MTU (optional)</string>
+    <string name="wg_probe_target">Watchdog Probe Target (optional)</string>
     <string name="wg_peer">Peer</string>
     <string name="wg_peer_public_key">Peer Public Key</string>
     <string name="wg_peer_preshared_key">Pre-shared Key (optional)</string>
