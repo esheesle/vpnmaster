@@ -64,9 +64,16 @@ fun SettingsScreen(
     val watchdogProbeMaxFailures by viewModel.watchdogProbeMaxFailures.collectAsState()
     val autoConnectOnBoot by viewModel.autoConnectOnBoot.collectAsState()
     val diagnosticLoggingEnabled by viewModel.diagnosticLoggingEnabled.collectAsState()
+    val taskerAuthRequired by viewModel.taskerAuthRequired.collectAsState()
+    val taskerAuthToken by viewModel.taskerAuthToken.collectAsState()
+    val batteryOptIgnored by viewModel.batteryOptIgnored.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val backupUiState by viewModel.backupUiState.collectAsState()
     val context = LocalContext.current
+
+    // Battery optimization state lives in system settings; re-poll whenever
+    // this screen comes back into composition (user returning from Settings).
+    LaunchedEffect(Unit) { viewModel.refreshBatteryOptStatus() }
 
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -147,6 +154,36 @@ fun SettingsScreen(
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = { viewModel.openVpnSettings() }) {
                     Text(stringResource(R.string.open_vpn_settings))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Battery optimization
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = stringResource(R.string.battery_opt_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(
+                        if (batteryOptIgnored) R.string.battery_opt_desc_unrestricted
+                        else R.string.battery_opt_desc_restricted
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!batteryOptIgnored) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = { viewModel.requestIgnoreBatteryOptimizations() }) {
+                        Text(stringResource(R.string.battery_opt_request_button))
+                    }
                 }
             }
         }
@@ -268,7 +305,76 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.tasker_auth_required),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.tasker_auth_required_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = taskerAuthRequired,
+                        onCheckedChange = { viewModel.setTaskerAuthRequired(it) }
+                    )
+                }
+
+                if (taskerAuthRequired) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.tasker_auth_token_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = taskerAuthToken,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("VPN Master Tasker token", taskerAuthToken))
+                            Toast.makeText(context, context.getString(R.string.tasker_auth_token_copied), Toast.LENGTH_SHORT).show()
+                        }) {
+                            Text(stringResource(R.string.tasker_auth_copy))
+                        }
+                        OutlinedButton(onClick = { viewModel.regenerateTaskerToken() }) {
+                            Text(stringResource(R.string.tasker_auth_regenerate))
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.tasker_auth_extra_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 if (profiles.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
                     Text(
                         text = stringResource(R.string.tasker_profile_ids),

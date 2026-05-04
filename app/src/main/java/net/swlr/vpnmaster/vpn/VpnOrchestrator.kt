@@ -39,6 +39,14 @@ class VpnOrchestrator @Inject constructor(
         // Shorter = flapping thrashes. Longer = legitimate reconnects pay old penalty.
         private const val BACKOFF_RESET_WINDOW_MS = 60_000L
         private const val CONNECT_TIMEOUT_MS = 30_000L
+        // If a new reconnect fires within this window after the prior tunnel
+        // reached CONNECTED, treat it as anomalous churn — the kind of pattern
+        // that would surface a regression in GoBackend.setState(UP)'s internal
+        // teardown of an existing tunnel (stale native state left behind).
+        // Threshold high enough to not fire on legitimate single hand-off
+        // events (network change, brief hang) yet low enough to flag the
+        // pathological back-to-back UP-over-UP that would indicate a leak.
+        private const val RECONNECT_CHURN_WINDOW_MS = 20_000L
         // Retries for an explicit user-initiated connect (UI, Tasker, boot,
         // null-intent service restart). The watchdog and network-change
         // listener are only armed after the tunnel reaches CONNECTED at least
@@ -275,6 +283,18 @@ class VpnOrchestrator @Inject constructor(
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             val now = System.currentTimeMillis()
+            // Anomaly signal for the no-explicit-DOWN-before-UP design choice:
+            // a fresh reconnect arriving very soon after the prior tunnel was
+            // verified up suggests stale native state surviving the implicit
+            // teardown inside GoBackend.setState(UP). Quiet on healthy paths
+            // (network change, single hang) — fires only on rapid back-to-back
+            // churn, so it's safe to leave on in release.
+            if (lastConnectedAt > 0) {
+                val sinceConnected = now - lastConnectedAt
+                if (sinceConnected in 0 until RECONNECT_CHURN_WINDOW_MS) {
+                    Log.w(TAG, "Reconnect churn: new reconnect ${sinceConnected}ms after prior CONNECTED (state=${_state.value})")
+                }
+            }
             val wasStable = lastConnectedAt > 0 && (now - lastConnectedAt) >= BACKOFF_RESET_WINDOW_MS
             if (wasStable) reconnectAttempt = 0
             // Snapshot at the start of this cycle so that a teardown that

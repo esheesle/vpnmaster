@@ -2,6 +2,21 @@
 
 VPN Master supports external control via broadcast intents, making it compatible with Tasker, Automate, MacroDroid, and any other Android automation app that can send intents.
 
+## Authentication (recommended)
+
+The receiver is exported, which means by default any installed app can send these broadcasts. To prevent that, enable **Require auth token** in Settings → Automation. When enabled:
+
+1. Go to **Settings → Automation (Tasker)**
+2. Toggle **Require auth token** on
+3. Copy the token shown beneath the toggle
+4. Add it as an extra to **every** intent you send:
+
+| Extra Key | Value |
+|-----------|-------|
+| `token`   | The token from Settings |
+
+Commands without a matching token are silently ignored. Use **Regenerate** to invalidate the existing token (e.g., if it leaks); you'll need to update every Tasker task that uses it.
+
 ## Finding Your Profile IDs
 
 You can find your profile IDs in the app:
@@ -79,11 +94,13 @@ f9e8d7c6-b5a4-3210-fedc-ba0987654321|Work VPN|IKEv2
 **To start a tunnel:**
 - Action: `net.swlr.vpnmaster.action.START_TUNNEL`
 - Extra: `profile_id:a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+- Extra: `token:<your token>` *(if auth required)*
 - Package: `net.swlr.vpnmaster`
 - Target: **Broadcast Receiver**
 
 **To stop the tunnel:**
 - Action: `net.swlr.vpnmaster.action.STOP_TUNNEL`
+- Extra: `token:<your token>` *(if auth required)*
 - Package: `net.swlr.vpnmaster`
 - Target: **Broadcast Receiver**
 
@@ -124,6 +141,8 @@ f9e8d7c6-b5a4-3210-fedc-ba0987654321|Work VPN|IKEv2
 ## ADB / Command Line
 
 You can also trigger these actions via `adb` for testing or scripting:
+
+If auth is enabled, append `--es token "<your token>"` to every command.
 
 ```bash
 # Start a tunnel by profile ID

@@ -81,7 +81,7 @@
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="always_on_vpn">Always-on VPN &amp; kill switch</string>
-    <string name="always_on_vpn_desc">Prevents traffic from leaking to the physical network when the tunnel is down. Both toggles must be set in Android system settings — the app cannot enforce this itself.</string>
+    <string name="always_on_vpn_desc">Prevents traffic from leaking to the physical network when the tunnel is down, and lets the OS resurrect the VPN if Android kills the app. Both toggles must be set in Android system settings — the app cannot enforce this itself. Without always-on VPN, in-app reconnect recovery is best-effort.</string>
     <string name="always_on_vpn_instructions">For full leak protection:\n\n1. Open Android Settings\n2. Go to Network &amp; Internet → VPN\n3. Tap the gear icon next to VPN Master\n4. Enable \"Always-on VPN\"\n5. Enable \"Block connections without VPN\"\n\nStep 5 is the kill switch. Without it, traffic can leak to the physical network during reconnect backoff, on boot before the tunnel comes up, or if the tunnel fails.</string>
     <string name="open_vpn_settings">Open VPN Settings</string>
     <string name="watchdog_enabled">Connection Watchdog</string>
@@ -91,6 +91,22 @@
     <string name="watchdog_probe_failures_desc">Active probe attempts (2s apart) on a stalled tunnel before reconnecting. Lower = faster recovery, higher = more tolerant of brief link blips.</string>
     <string name="auto_connect_boot">Auto-connect on Boot</string>
     <string name="auto_connect_boot_desc">Connect VPN when device starts</string>
+
+    <!-- Battery optimization -->
+    <string name="battery_opt_title">Battery optimization</string>
+    <string name="battery_opt_desc_unrestricted">Battery optimization is disabled for VPN Master. The watchdog and reconnect logic can run reliably in the background.</string>
+    <string name="battery_opt_desc_restricted">Battery optimization is currently active. Android may slow or kill background work, weakening reconnect recovery if the app is in the background. Always-on VPN at the OS level is the strongest protection; disabling battery optimization helps as a best-effort backup.</string>
+    <string name="battery_opt_request_button">Disable battery optimization</string>
+    <string name="battery_opt_open_settings">Open battery settings</string>
+
+    <!-- Tasker auth -->
+    <string name="tasker_auth_required">Require auth token</string>
+    <string name="tasker_auth_required_desc">When on, external automation commands must include a matching token. Recommended — without it, any installed app on this device can start, stop, or enumerate VPN profiles.</string>
+    <string name="tasker_auth_token_label">Token</string>
+    <string name="tasker_auth_copy">Copy</string>
+    <string name="tasker_auth_regenerate">Regenerate</string>
+    <string name="tasker_auth_token_copied">Token copied</string>
+    <string name="tasker_auth_extra_help">Add this extra to every Tasker command:\n  Extra: token:&lt;value above&gt;</string>
 
     <!-- QR Scanner -->
     <string name="qr_scan_title">Scan QR Code</string>
