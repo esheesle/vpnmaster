@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import net.swlr.vpnmaster.data.repository.SettingsRepository
 import net.swlr.vpnmaster.logging.AppLog
 import net.swlr.vpnmaster.logging.LogBuffer
+import net.swlr.vpnmaster.service.WatchdogManager
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -22,6 +23,9 @@ class VpnMasterApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var watchdogManager: WatchdogManager
 
     // Application-lifetime scope for collectors that should live as long as the
     // process. Held as a member (not a one-shot CoroutineScope() call inside
@@ -46,6 +50,10 @@ class VpnMasterApp : Application(), Configuration.Provider {
                 AppLog.bufferEnabled = enabled
             }
         }
+        // Bind watchdog liveness to orchestrator state, not VpnMasterService
+        // lifecycle. Must run on every cold start; idempotent so a future
+        // re-init (e.g. mid-process restore) is harmless.
+        watchdogManager.initialize()
         AppLog.i("VpnMasterApp", "App process started")
     }
 }

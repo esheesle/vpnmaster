@@ -263,7 +263,14 @@ class VpnOrchestrator @Inject constructor(
      * another [reconnect] call supersedes it. Backoff resets to start only if
      * the previous connection was stable for [BACKOFF_RESET_WINDOW_MS] — this
      * prevents flapping networks from restarting backoff at 1s on every retry.
+     *
+     * @Synchronized makes the cancel-then-launch pair atomic. Without it, two
+     * concurrent callers (e.g., the watchdog tick and the network-change
+     * debounce firing in the same moment) could both observe the same prior
+     * job, both cancel it, and both launch — producing two parallel reconnect
+     * loops on the orchestrator scope, each running its own backoff schedule.
      */
+    @Synchronized
     fun reconnect() {
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
@@ -295,8 +302,10 @@ class VpnOrchestrator @Inject constructor(
                     )
                     firstFailureNotified = true
                 }
+                // coerceIn (not minOf) so a hypothetical Int overflow that wraps
+                // reconnectAttempt to a negative value still indexes safely.
                 val delaySec = BACKOFF_SCHEDULE_SEC[
-                    minOf(reconnectAttempt, BACKOFF_SCHEDULE_SEC.lastIndex)
+                    reconnectAttempt.coerceIn(0, BACKOFF_SCHEDULE_SEC.lastIndex)
                 ]
                 reconnectAttempt++
                 Log.w(TAG, "Reconnect failed (attempt $reconnectAttempt), backing off ${delaySec}s")
@@ -331,6 +340,11 @@ class VpnOrchestrator @Inject constructor(
             _state.value = VpnState.CONNECTED
             _errorMessage.value = null
             lastConnectedAt = System.currentTimeMillis()
+            // Symmetric with connect()'s success path. Without this, a recovery
+            // that lands on attempt N leaves reconnectAttempt=N, so a fresh
+            // hang within BACKOFF_RESET_WINDOW_MS resumes backoff at the cap
+            // instead of restarting cleanly.
+            reconnectAttempt = 0
             true
         } catch (e: TimeoutCancellationException) {
             Log.e(TAG, "Reconnect attempt timed out")

@@ -69,7 +69,6 @@ class VpnMasterService : GoBackend.VpnService() {
     @Inject lateinit var orchestrator: VpnOrchestrator
     @Inject lateinit var profileRepository: ProfileRepository
     @Inject lateinit var settingsRepository: SettingsRepository
-    @Inject lateinit var watchdogManager: WatchdogManager
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     @Volatile private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -90,48 +89,14 @@ class VpnMasterService : GoBackend.VpnService() {
         createNotificationChannel()
         startForegroundCompat(buildNotification(getString(R.string.vpn_disconnected)))
 
-        // If Android killed the service and START_STICKY is restarting it,
-        // the orchestrator (app-scoped singleton) may still report an active
-        // state while the watchdog and network callback are torn down. This
-        // happens during watchdog-driven reconnects: GoBackend.setState(UP)
-        // does an internal DOWN→UP cycle that closes the TUN; Android often
-        // stops the VpnService on the close, then restarts it mid-reconnect
-        // with state still RECONNECTING. Rehydrate for any state where the
-        // orchestrator is actively trying to maintain a connection — anything
-        // but a clean DISCONNECTED/DISCONNECTING — otherwise we end up with
-        // state=CONNECTED and no monitoring once the in-flight reconnect
-        // lands. (The state collector below registers the network callback
-        // on the CONNECTED transition but does NOT start the watchdog, so
-        // missing this rehydrate means the watchdog stays dead until the
-        // next user-initiated connect.)
-        val currentState = orchestrator.state.value
-        val needsRehydrate = currentState == VpnState.CONNECTED ||
-            currentState == VpnState.CONNECTING ||
-            currentState == VpnState.RECONNECTING ||
-            currentState == VpnState.ERROR
-        if (needsRehydrate) {
-            Log.i(TAG, "onCreate with state=$currentState — service likely restarted; rehydrating monitors")
-            serviceScope.launch {
-                val watchdogEnabled = settingsRepository.watchdogEnabled.first()
-                if (watchdogEnabled) {
-                    val interval = settingsRepository.watchdogIntervalSeconds.first()
-                    val probeMaxFailures = settingsRepository.watchdogProbeMaxFailures.first()
-                    watchdogManager.start(interval.toLong(), probeMaxFailures)
-                }
-            }
-        }
-
         serviceScope.launch {
             var prevState: VpnState? = null
             orchestrator.state.collect { state ->
-                // Reset watchdog traffic counters on every fresh entry into
-                // CONNECTED — including reconnects, which never pass through
-                // DISCONNECTED so start() wouldn't fire. Without this, stale
-                // rx timestamps instantly re-trip the hang detector.
+                // Cancel any pending debounce/internet-restored jobs queued while
+                // a reconnect was in flight — we're up now, no need to act on them.
+                // (Watchdog liveness is handled by WatchdogManager's own state
+                // observer; nothing to do here for it.)
                 if (state == VpnState.CONNECTED && prevState != VpnState.CONNECTED) {
-                    watchdogManager.notifyConnected()
-                    // Cancel any pending debounce/internet-restored jobs queued while
-                    // the reconnect was in flight — we're up now, no need to act on them.
                     networkChangeJob?.cancel()
                     networkChangeJob = null
                     internetRestoredJob?.cancel()
@@ -157,10 +122,7 @@ class VpnMasterService : GoBackend.VpnService() {
 
                 when (state) {
                     VpnState.CONNECTED -> registerNetworkCallback()
-                    VpnState.DISCONNECTED -> {
-                        watchdogManager.stop()
-                        unregisterNetworkCallback()
-                    }
+                    VpnState.DISCONNECTED -> unregisterNetworkCallback()
                     else -> {}
                 }
             }
@@ -255,14 +217,9 @@ class VpnMasterService : GoBackend.VpnService() {
 
     private suspend fun handleConnect(profile: VpnProfile) {
         try {
+            // Watchdog start is no longer driven from here — WatchdogManager's
+            // process-scoped observer rearms itself on every CONNECTED transition.
             orchestrator.connect(profile)
-
-            val watchdogEnabled = settingsRepository.watchdogEnabled.first()
-            if (watchdogEnabled) {
-                val interval = settingsRepository.watchdogIntervalSeconds.first()
-                val probeMaxFailures = settingsRepository.watchdogProbeMaxFailures.first()
-                watchdogManager.start(interval.toLong(), probeMaxFailures)
-            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             // Superseded by another connect/disconnect — don't report as error.
             throw e
@@ -318,7 +275,10 @@ class VpnMasterService : GoBackend.VpnService() {
                 val nowHasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
                 val hadInternet = hasInternet
                 hasInternet = nowHasInternet
-                watchdogManager.setInternetAvailable(nowHasInternet)
+                // WatchdogManager tracks internet availability via its own
+                // process-scoped NetworkCallback now, so it survives this
+                // service being killed during an outage. Nothing to push to it
+                // from here.
                 if (!hadInternet && nowHasInternet) {
                     Log.i(TAG, "Internet connectivity restored on $network")
                     onInternetRestored()
@@ -429,7 +389,11 @@ class VpnMasterService : GoBackend.VpnService() {
     override fun onDestroy() {
         Log.d(TAG, "onDestroy, orchestrator.state=${orchestrator.state.value}")
         serviceScope.cancel()
-        watchdogManager.stop()
+        // Deliberately leaving WatchdogManager alone here. It's process-scoped,
+        // observes orchestrator.state directly, and owns its own internet-
+        // availability callback — tearing any of that down on every service
+        // destroy is exactly the bug that left the tunnel unmonitored after a
+        // reconnect succeeded with no service alive.
         unregisterNetworkCallback()
         super.onDestroy()
     }
