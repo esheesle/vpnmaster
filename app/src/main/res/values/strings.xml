@@ -88,9 +88,14 @@
     <string name="watchdog_desc">Automatically reconnect on failure</string>
     <string name="watchdog_interval">Check Interval</string>
     <string name="watchdog_probe_failures">Probe Failures Before Reconnect</string>
-    <string name="watchdog_probe_failures_desc">Active probe attempts (2s apart) on a stalled tunnel before reconnecting. Lower = faster recovery, higher = more tolerant of brief link blips.</string>
+    <string name="watchdog_probe_failures_disabled_label">Active probes: disabled (handshake-age only)</string>
+    <string name="watchdog_probe_failures_desc">Active probe attempts (2s apart) on a stalled tunnel before reconnecting. Lower = faster recovery, higher = more tolerant of brief link blips. 0 disables active probing entirely; recovery falls back to handshake-age (~3min) — slower but lower battery use.</string>
     <string name="auto_connect_boot">Auto-connect on Boot</string>
     <string name="auto_connect_boot_desc">Connect VPN when device starts</string>
+
+    <!-- Status notification toggle -->
+    <string name="status_notif_title">Notification when disconnected</string>
+    <string name="status_notif_desc">Show a dismissable status notification after a disconnect, so you can see VPN state at a glance and tap to reconnect. When off, the notification is removed once the VPN stops.</string>
 
     <!-- Battery optimization -->
     <string name="battery_opt_title">Battery optimization</string>
@@ -122,6 +127,7 @@
     <string name="notification_connecting">Connecting to %s…</string>
     <string name="notification_disconnected">VPN Disconnected</string>
     <string name="notification_action_disconnect">Disconnect</string>
+    <string name="notification_action_connect">Connect</string>
 
     <!-- Alert notifications -->
     <string name="notification_channel_alert_connect">Connection failed</string>

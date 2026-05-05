@@ -67,6 +67,7 @@ fun SettingsScreen(
     val taskerAuthRequired by viewModel.taskerAuthRequired.collectAsState()
     val taskerAuthToken by viewModel.taskerAuthToken.collectAsState()
     val batteryOptIgnored by viewModel.batteryOptIgnored.collectAsState()
+    val showDisconnectedNotification by viewModel.showDisconnectedNotification.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val backupUiState by viewModel.backupUiState.collectAsState()
     val context = LocalContext.current
@@ -160,6 +161,38 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        // Status notification when disconnected
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.status_notif_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.status_notif_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = showDisconnectedNotification,
+                    onCheckedChange = { viewModel.setShowDisconnectedNotification(it) }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         // Battery optimization
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -233,8 +266,13 @@ fun SettingsScreen(
                     )
 
                     Spacer(Modifier.height(12.dp))
+                    val probeLabel = if (watchdogProbeMaxFailures == 0) {
+                        stringResource(R.string.watchdog_probe_failures_disabled_label)
+                    } else {
+                        "${stringResource(R.string.watchdog_probe_failures)}: $watchdogProbeMaxFailures"
+                    }
                     Text(
-                        text = "${stringResource(R.string.watchdog_probe_failures)}: $watchdogProbeMaxFailures",
+                        text = probeLabel,
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
@@ -242,12 +280,13 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    // Slider has 9 internal steps -> 10 stops total -> integers 1..10.
+                    // Slider has 10 internal steps -> 11 stops total -> integers 0..10.
+                    // 0 = probe-disabled mode (handshake-age fallback only).
                     Slider(
                         value = watchdogProbeMaxFailures.toFloat(),
                         onValueChange = { viewModel.setWatchdogProbeMaxFailures(it.toInt()) },
-                        valueRange = 1f..10f,
-                        steps = 8,
+                        valueRange = 0f..10f,
+                        steps = 9,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

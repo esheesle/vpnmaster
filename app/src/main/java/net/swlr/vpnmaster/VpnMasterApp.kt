@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import net.swlr.vpnmaster.data.repository.SettingsRepository
 import net.swlr.vpnmaster.logging.AppLog
 import net.swlr.vpnmaster.logging.LogBuffer
+import net.swlr.vpnmaster.service.StatusNotificationController
 import net.swlr.vpnmaster.service.WatchdogManager
 import javax.inject.Inject
 
@@ -26,6 +27,9 @@ class VpnMasterApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var watchdogManager: WatchdogManager
+
+    @Inject
+    lateinit var statusNotificationController: StatusNotificationController
 
     // Application-lifetime scope for collectors that should live as long as the
     // process. Held as a member (not a one-shot CoroutineScope() call inside
@@ -54,6 +58,10 @@ class VpnMasterApp : Application(), Configuration.Provider {
         // lifecycle. Must run on every cold start; idempotent so a future
         // re-init (e.g. mid-process restore) is harmless.
         watchdogManager.initialize()
+        // Start the process-scoped disconnected-state notification observer.
+        // FGS owns NOTIFICATION_ID while the service is active; this picks up
+        // the slot once the service stops on disconnect.
+        statusNotificationController.start()
         AppLog.i("VpnMasterApp", "App process started")
     }
 }

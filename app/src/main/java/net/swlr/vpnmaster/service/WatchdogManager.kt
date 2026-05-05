@@ -21,10 +21,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.swlr.vpnmaster.data.model.SplitTunnelMode
 import net.swlr.vpnmaster.data.repository.SettingsRepository
 import net.swlr.vpnmaster.vpn.VpnOrchestrator
 import net.swlr.vpnmaster.vpn.VpnState
@@ -167,6 +170,32 @@ class WatchdogManager @Inject constructor(
                 }
                 prevState = state
             }
+        }
+
+        // React to live setting changes while CONNECTED: starting/stopping or
+        // restarting the in-memory loop with the new values. Without this,
+        // toggling watchdog off or moving the interval slider has no effect
+        // until the next disconnect/reconnect — confusing, and disables the
+        // ostensible purpose of the toggle. drop(1) skips the initial
+        // emission of each flow on subscribe; the state observer above is
+        // already responsible for the initial start.
+        observerScope.launch {
+            combine(
+                settingsRepository.watchdogEnabled,
+                settingsRepository.watchdogIntervalSeconds,
+                settingsRepository.watchdogProbeMaxFailures
+            ) { enabled, interval, probeMax -> Triple(enabled, interval, probeMax) }
+                .drop(1)
+                .collect { (enabled, interval, probeMax) ->
+                    if (orchestrator.state.value != VpnState.CONNECTED) return@collect
+                    if (enabled) {
+                        Log.i(TAG, "Settings changed while CONNECTED — restarting (interval=${interval}s, probeMax=$probeMax)")
+                        start(interval.toLong(), probeMax)
+                    } else {
+                        Log.i(TAG, "Watchdog disabled while CONNECTED — stopping")
+                        stop()
+                    }
+                }
         }
     }
 
@@ -366,8 +395,12 @@ class WatchdogManager @Inject constructor(
         // genuinely down server can't drive tight reconnect cycles. Skip when
         // !hasInternet — the device already says there's no upstream, so probes
         // can't produce a meaningful rx delta and would just burn battery on
-        // every tick of a sustained outage.
-        if (probeEnabled && hasInternet && (now - lastProbeReconnectAt) > PROBE_RECONNECT_COOLDOWN_MS) {
+        // every tick of a sustained outage. Skip when this app is split-tunneled
+        // out of the VPN — probes from this process would route via the
+        // physical interface, never reach the peer, and produce a guaranteed
+        // false-positive "tunnel hung" verdict (see appRoutedThroughVpn()).
+        val routedThroughVpn = appRoutedThroughVpn()
+        if (probeEnabled && hasInternet && routedThroughVpn && (now - lastProbeReconnectAt) > PROBE_RECONNECT_COOLDOWN_MS) {
             val target = derivePeerTunnelIp()
             if (target != null) {
                 Log.i(TAG, "Probe burst start: rx stuck ${rxStuckFor / 1000}s, target=${target.hostAddress}, max=$probeMaxFailures")
@@ -379,6 +412,8 @@ class WatchdogManager @Inject constructor(
             Log.i(TAG, "rx stuck ${rxStuckFor / 1000}s but no probe target derivable; using handshake-age fallback")
         } else if (probeEnabled && !hasInternet) {
             Log.i(TAG, "rx stuck ${rxStuckFor / 1000}s but no validated internet; skipping probe burst, using handshake-age fallback")
+        } else if (probeEnabled && !routedThroughVpn) {
+            Log.i(TAG, "rx stuck ${rxStuckFor / 1000}s but app is split-tunneled out of VPN; skipping probe burst, using handshake-age fallback")
         } else if (probeEnabled) {
             val cooldownLeft = (PROBE_RECONNECT_COOLDOWN_MS - (now - lastProbeReconnectAt)) / 1000
             Log.i(TAG, "rx stuck ${rxStuckFor / 1000}s; probe in cooldown ${cooldownLeft}s, using handshake-age fallback")
@@ -455,6 +490,28 @@ class WatchdogManager @Inject constructor(
             }
         } catch (_: Exception) {
             // Connection failures (RST, timeout, unreachable) are expected and fine.
+        }
+    }
+
+    /**
+     * True when sockets opened from this app's process traverse the VPN
+     * tunnel — i.e., this package is in the VPN's routing scope per the
+     * profile's split-tunnel config. The watchdog's probe sockets only
+     * generate rx-on-tunnel deltas when this is true. False forces the
+     * caller to fall back to handshake-age detection because probes would
+     * silently bypass the tunnel, never reach the peer, and produce a
+     * guaranteed false "tunnel hung" verdict.
+     *
+     * Returns true conservatively if there's no active profile (we'd
+     * already have bigger problems if probing fires without one).
+     */
+    private fun appRoutedThroughVpn(): Boolean {
+        val split = orchestrator.activeProfile.value?.splitTunnelConfig ?: return true
+        val pkg = context.packageName
+        return when (split.mode) {
+            SplitTunnelMode.DISABLED -> true
+            SplitTunnelMode.EXCLUDE_APPS -> pkg !in split.appPackages
+            SplitTunnelMode.INCLUDE_APPS -> pkg in split.appPackages
         }
     }
 

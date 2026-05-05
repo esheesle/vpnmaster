@@ -6,9 +6,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -241,6 +243,15 @@ class VpnOrchestrator @Inject constructor(
         connectionMutex.withLock { disconnectInternal() }
     }
 
+    /**
+     * Fire-and-forget disconnect for callers whose own coroutine scope might
+     * be torn down before [disconnect] completes — onRevoke() in particular,
+     * where Android's super.onRevoke() calls stopSelf() which cancels the
+     * service scope. Runs on the orchestrator's own process-scoped scope so
+     * cleanup completes regardless of caller lifecycle.
+     */
+    fun fireDisconnect(): Job = scope.launch { disconnect() }
+
     private suspend fun disconnectInternal() {
         _state.value = VpnState.DISCONNECTING
         try {
@@ -254,14 +265,23 @@ class VpnOrchestrator @Inject constructor(
         } catch (e: Exception) {
             Log.w(TAG, "Error during disconnect: ${e.message}", e)
         } finally {
-            _state.value = VpnState.DISCONNECTED
-            _activeProfile.value = null
-            lastKnownProfile = null
-            activeBackend = null
-            _statistics.value = VpnStatistics()
-            lastConnectedAt = 0
-            reconnectAttempt = 0
-            settingsRepository.setActiveProfileId(null)
+            // Run the cleanup on a NonCancellable context so a caller whose
+            // scope is being cancelled (e.g. onRevoke racing onDestroy) still
+            // sees activeProfileId cleared from DataStore. Without this, the
+            // suspending setActiveProfileId(null) below silently throws
+            // CancellationException and the watchdog later thinks the user
+            // still wants the VPN up — driving doomed reconnect attempts on
+            // permission that was just revoked.
+            withContext(NonCancellable) {
+                _state.value = VpnState.DISCONNECTED
+                _activeProfile.value = null
+                lastKnownProfile = null
+                activeBackend = null
+                _statistics.value = VpnStatistics()
+                lastConnectedAt = 0
+                reconnectAttempt = 0
+                settingsRepository.setActiveProfileId(null)
+            }
         }
     }
 

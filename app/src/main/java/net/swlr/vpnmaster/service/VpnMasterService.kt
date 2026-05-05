@@ -50,13 +50,16 @@ class VpnMasterService : GoBackend.VpnService() {
         // block on the DB before invoking startForegroundService.
         const val ACTION_RESUME = "net.swlr.vpnmaster.RESUME"
         const val EXTRA_PROFILE_ID = "profile_id"
-        private const val NOTIFICATION_ID = 1
+        // Shared with StatusNotificationController so the disconnected
+        // notification reuses the same id/channel — ensures the FGS handover
+        // replaces content cleanly without a flicker.
+        const val NOTIFICATION_ID = 1
+        const val CHANNEL_ID = "vpn_status"
         // Distinct alert IDs so the two alert types don't collapse onto each
         // other if both fire. Channels are also distinct so users can configure
         // sound/importance per type in Android system settings.
         private const val NOTIFICATION_ID_ALERT_CONNECT = 2
         private const val NOTIFICATION_ID_ALERT_RECOVERY = 3
-        private const val CHANNEL_ID = "vpn_status"
         private const val CHANNEL_ID_ALERT_CONNECT = "vpn_alert_connect"
         private const val CHANNEL_ID_ALERT_RECOVERY = "vpn_alert_recovery"
         private const val TAG = "VpnMasterService"
@@ -104,21 +107,30 @@ class VpnMasterService : GoBackend.VpnService() {
                 }
                 prevState = state
 
-                val text = when (state) {
-                    VpnState.DISCONNECTED -> getString(R.string.vpn_disconnected)
-                    VpnState.CONNECTING -> {
-                        val name = orchestrator.activeProfile.value?.name ?: ""
-                        getString(R.string.notification_connecting, name)
+                // DISCONNECTED is owned by StatusNotificationController (a
+                // process-scoped observer that posts a dismissable status
+                // notification). Updating the FGS notification here would
+                // race with the stopForeground(REMOVE) that follows in
+                // stopServiceCleanly — re-posting a stale "Disconnected"
+                // FGS notification after the controller has already taken
+                // over the slot. So skip the update; let the controller win.
+                if (state != VpnState.DISCONNECTED) {
+                    val text = when (state) {
+                        VpnState.CONNECTING -> {
+                            val name = orchestrator.activeProfile.value?.name ?: ""
+                            getString(R.string.notification_connecting, name)
+                        }
+                        VpnState.CONNECTED -> {
+                            val name = orchestrator.activeProfile.value?.name ?: ""
+                            getString(R.string.notification_connected, name)
+                        }
+                        VpnState.DISCONNECTING -> getString(R.string.vpn_disconnecting)
+                        VpnState.ERROR -> getString(R.string.vpn_error)
+                        VpnState.RECONNECTING -> getString(R.string.vpn_reconnecting)
+                        VpnState.DISCONNECTED -> "" // unreachable, handled above
                     }
-                    VpnState.CONNECTED -> {
-                        val name = orchestrator.activeProfile.value?.name ?: ""
-                        getString(R.string.notification_connected, name)
-                    }
-                    VpnState.DISCONNECTING -> getString(R.string.vpn_disconnecting)
-                    VpnState.ERROR -> getString(R.string.vpn_error)
-                    VpnState.RECONNECTING -> getString(R.string.vpn_reconnecting)
+                    updateNotification(text, state == VpnState.CONNECTED)
                 }
-                updateNotification(text, state == VpnState.CONNECTED)
 
                 when (state) {
                     VpnState.CONNECTED -> registerNetworkCallback()
@@ -168,15 +180,25 @@ class VpnMasterService : GoBackend.VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CONNECT -> {
-                val profileId = intent.getStringExtra(EXTRA_PROFILE_ID) ?: return START_STICKY
+                val profileId = intent.getStringExtra(EXTRA_PROFILE_ID)
+                if (profileId == null) {
+                    stopServiceCleanly(startId)
+                    return START_NOT_STICKY
+                }
                 serviceScope.launch {
-                    val profile = profileRepository.getProfileById(profileId) ?: return@launch
+                    val profile = profileRepository.getProfileById(profileId)
+                    if (profile == null) {
+                        Log.w(TAG, "ACTION_CONNECT for unknown profileId=$profileId — stopping")
+                        stopServiceCleanly(startId)
+                        return@launch
+                    }
                     handleConnect(profile)
                 }
             }
             ACTION_DISCONNECT -> {
                 serviceScope.launch {
                     orchestrator.disconnect()
+                    stopServiceCleanly(startId)
                 }
             }
             ACTION_RESUME -> {
@@ -186,7 +208,11 @@ class VpnMasterService : GoBackend.VpnService() {
                     val lastId = settingsRepository.lastConnectedProfileId.first()
                     val profile = (lastId?.let { profileRepository.getProfileById(it) })
                         ?: profileRepository.getDefaultProfile()
-                        ?: return@launch
+                    if (profile == null) {
+                        Log.i(TAG, "ACTION_RESUME but no profile to connect — stopping")
+                        stopServiceCleanly(startId)
+                        return@launch
+                    }
                     handleConnect(profile)
                 }
             }
@@ -205,14 +231,40 @@ class VpnMasterService : GoBackend.VpnService() {
                     val profileId = settingsRepository.activeProfileId.first()
                     if (profileId == null) {
                         Log.i(TAG, "Null-intent restart with no activeProfileId — user disconnected, staying off")
+                        stopServiceCleanly(startId)
                         return@launch
                     }
-                    val profile = profileRepository.getProfileById(profileId) ?: return@launch
+                    val profile = profileRepository.getProfileById(profileId)
+                    if (profile == null) {
+                        Log.w(TAG, "Null-intent restart with unknown profileId=$profileId — stopping")
+                        stopServiceCleanly(startId)
+                        return@launch
+                    }
                     handleConnect(profile)
                 }
             }
         }
         return START_STICKY
+    }
+
+    /**
+     * Stop foreground state and the service. Used on every "no work to do"
+     * path in onStartCommand so the FGS notification, slot, and quota are
+     * released instead of staying live as an idle zombie.
+     *
+     * Uses STOP_FOREGROUND_DETACH (not REMOVE) so the notification at
+     * NOTIFICATION_ID survives the foreground transition. This matters
+     * because StatusNotificationController posts the post-disconnect
+     * notification at the same id from a process-scoped collector that
+     * fires concurrently with this stop: REMOVE would race the post and
+     * sometimes wipe the controller's notification microseconds after it
+     * appeared. DETACH cleanly releases the foreground binding and lets
+     * the controller's post (or its setting-off cancel) be the final word
+     * on the slot.
+     */
+    private fun stopServiceCleanly(startId: Int) {
+        stopForeground(STOP_FOREGROUND_DETACH)
+        stopSelf(startId)
     }
 
     private suspend fun handleConnect(profile: VpnProfile) {
@@ -380,9 +432,11 @@ class VpnMasterService : GoBackend.VpnService() {
 
     override fun onRevoke() {
         Log.w(TAG, "onRevoke() fired — VPN permission was withdrawn by the system")
-        serviceScope.launch {
-            orchestrator.disconnect()
-        }
+        // Use the orchestrator's own process-scoped scope. super.onRevoke()
+        // calls stopSelf() synchronously, which triggers onDestroy and cancels
+        // serviceScope; a launch on serviceScope here would be racing the
+        // teardown and could be cancelled before activeProfileId is cleared.
+        orchestrator.fireDisconnect()
         super.onRevoke()
     }
 

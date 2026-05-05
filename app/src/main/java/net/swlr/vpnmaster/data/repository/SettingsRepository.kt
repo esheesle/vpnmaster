@@ -41,6 +41,7 @@ class SettingsRepository @Inject constructor(
         val DIAGNOSTIC_LOGGING_ENABLED = booleanPreferencesKey("diagnostic_logging_enabled")
         val TASKER_AUTH_REQUIRED = booleanPreferencesKey("tasker_auth_required")
         val TASKER_AUTH_TOKEN = stringPreferencesKey("tasker_auth_token")
+        val SHOW_DISCONNECTED_NOTIFICATION = booleanPreferencesKey("show_disconnected_notification")
     }
 
     val watchdogEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -52,8 +53,13 @@ class SettingsRepository @Inject constructor(
             .coerceIn(WATCHDOG_INTERVAL_MIN, WATCHDOG_INTERVAL_MAX)
     }
 
+    // Lower bound of 0 enables a "handshake-age only" mode: the watchdog
+    // never sends probe sockets and falls back to the longer handshake-age
+    // grace (~3min) before declaring a tunnel hung. Trades faster recovery
+    // for less battery — useful on always-on devices that prioritize
+    // standby drain over recovery latency.
     val watchdogProbeMaxFailures: Flow<Int> = context.dataStore.data.map { prefs ->
-        (prefs[Keys.WATCHDOG_PROBE_MAX_FAILURES] ?: 3).coerceIn(1, 10)
+        (prefs[Keys.WATCHDOG_PROBE_MAX_FAILURES] ?: 3).coerceIn(0, 10)
     }
 
     val autoConnectOnBoot: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -79,6 +85,15 @@ class SettingsRepository @Inject constructor(
         prefs[Keys.TASKER_AUTH_REQUIRED] ?: false
     }
 
+    // Whether to keep a notification visible after a user-initiated disconnect.
+    // Default on so users have an at-a-glance status indicator. The
+    // foreground service is stopped on disconnect either way; this controls
+    // whether a regular (dismissable) notification is then posted in its
+    // place by StatusNotificationController.
+    val showDisconnectedNotification: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.SHOW_DISCONNECTED_NOTIFICATION] ?: true
+    }
+
     // Lazily generate on first read so a freshly installed app already has a
     // token to display, even if the user never visits the Tasker section.
     // Token is opaque to the user (copy-paste); regeneration is a setter.
@@ -102,7 +117,7 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun setWatchdogProbeMaxFailures(count: Int) {
-        context.dataStore.edit { it[Keys.WATCHDOG_PROBE_MAX_FAILURES] = count.coerceIn(1, 10) }
+        context.dataStore.edit { it[Keys.WATCHDOG_PROBE_MAX_FAILURES] = count.coerceIn(0, 10) }
     }
 
     suspend fun setAutoConnectOnBoot(enabled: Boolean) {
@@ -121,6 +136,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setDiagnosticLoggingEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.DIAGNOSTIC_LOGGING_ENABLED] = enabled }
+    }
+
+    suspend fun setShowDisconnectedNotification(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_DISCONNECTED_NOTIFICATION] = enabled }
     }
 
     suspend fun setLastConnectedProfileId(profileId: String?) {

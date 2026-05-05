@@ -45,10 +45,40 @@ class WireGuardBackend @Inject constructor(
         Log.i(TAG, "Building WireGuard config for ${profile.name}")
         val config = buildConfig(wgConfig, profile)
         val tunnel = WgTunnel(profile.name)
-        activeTunnel = tunnel
+
+        // Hold the prior reference so we can clean up on a failed UP. If we
+        // overwrote activeTunnel with the new object before setState(UP) and
+        // setState then threw, the orchestrator's safeBackendDisconnect would
+        // DOWN the *new* tunnel — a no-op, since the new tunnel was never up
+        // — while the previously-running tunnel could survive untracked
+        // depending on how far GoBackend got internally before failing.
+        val previousTunnel = activeTunnel
 
         Log.i(TAG, "Calling GoBackend.setState UP")
-        goBackend.setState(tunnel, Tunnel.State.UP, config)
+        try {
+            goBackend.setState(tunnel, Tunnel.State.UP, config)
+        } catch (e: Exception) {
+            // setState(UP) threw. GoBackend may or may not have torn down the
+            // previous tunnel before failing; do it explicitly so no stale
+            // tunnel survives this reconnect attempt. Best-effort: if it's
+            // already down, this is a no-op.
+            if (previousTunnel != null && previousTunnel !== tunnel) {
+                try {
+                    Log.i(TAG, "setState UP failed — taking previous tunnel DOWN as cleanup")
+                    goBackend.setState(previousTunnel, Tunnel.State.DOWN, null)
+                } catch (_: Exception) {
+                    // Best-effort cleanup; the failure path is already in flight.
+                }
+            }
+            // Keep activeTunnel pointing at previousTunnel (or null if there
+            // wasn't one) so subsequent disconnect() calls have something
+            // useful to target if state diverged. The next successful
+            // connect() replaces it.
+            throw e
+        }
+        // setState(UP) succeeded — now we own the new tunnel. GoBackend tore
+        // down any prior tunnel internally as part of this call.
+        activeTunnel = tunnel
         connectedSince = System.currentTimeMillis()
         Log.i(TAG, "WireGuard tunnel UP for ${profile.name}, waiting for handshake")
 
