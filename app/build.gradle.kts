@@ -19,7 +19,7 @@ android {
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "net.swlr.vpnmaster"
+        applicationId = "net.swlr.vpnmasterapp"
         minSdk = 26
         targetSdk = 35
         versionCode = 13
