@@ -91,3 +91,14 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 ```
+
+### Third-Party Libraries
+
+| Library | License |
+|---------|---------|
+| [WireGuard Android](https://git.zx2c4.com/wireguard-android) | GNU General Public License v2.0 |
+| [SQLCipher for Android](https://www.zetetic.net/sqlcipher/sqlcipher-for-android/) | BSD 3-Clause |
+| [Hilt / Dagger](https://dagger.dev/hilt/) | Apache License 2.0 |
+| [AndroidX / Jetpack](https://developer.android.com/jetpack) (Core, Lifecycle, Compose, Room, Navigation, CameraX, DataStore, Security, WorkManager) | Apache License 2.0 |
+| [Kotlin & KotlinX](https://kotlinlang.org/) (Coroutines, Serialization) | Apache License 2.0 |
+| [Google ML Kit Barcode Scanning](https://developers.google.com/ml-kit/vision/barcode-scanning) | [Google APIs Terms of Service](https://developers.google.com/terms) |
