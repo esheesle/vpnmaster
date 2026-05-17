@@ -604,6 +604,14 @@ class WatchdogWorker @dagger.assisted.AssistedInject constructor(
     override suspend fun doWork(): Result {
         val currentState = orchestrator.state.value
         if (currentState == VpnState.CONNECTED || currentState == VpnState.CONNECTING) {
+            // Re-post the foreground status notification. Some OEM launchers or
+            // an accidental swipe on Android versions that allow dismissing FGS
+            // notifications can leave the slot empty while the service is still
+            // alive; calling notify() with the same id restores it without
+            // disturbing the FGS state.
+            if (currentState == VpnState.CONNECTED) {
+                repostConnectedNotification()
+            }
             Log.d("WatchdogWorker", "VPN already connected, nothing to do")
             return Result.success()
         }
@@ -629,5 +637,47 @@ class WatchdogWorker @dagger.assisted.AssistedInject constructor(
             return Result.retry()
         }
         return Result.success()
+    }
+
+    private fun repostConnectedNotification() {
+        val ctx = applicationContext
+        val profileName = orchestrator.activeProfile.value?.name ?: ""
+        val text = ctx.getString(net.swlr.vpnmaster.R.string.notification_connected, profileName)
+
+        val contentIntent = android.app.PendingIntent.getActivity(
+            ctx, 0,
+            android.content.Intent(ctx, net.swlr.vpnmaster.MainActivity::class.java),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val disconnectIntent = android.app.PendingIntent.getService(
+            ctx, 1,
+            android.content.Intent(ctx, VpnMasterService::class.java).apply {
+                action = VpnMasterService.ACTION_DISCONNECT
+            },
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = androidx.core.app.NotificationCompat.Builder(ctx, VpnMasterService.CHANNEL_ID)
+            .setContentTitle(ctx.getString(net.swlr.vpnmaster.R.string.app_name))
+            .setContentText(text)
+            .setSmallIcon(net.swlr.vpnmaster.R.drawable.ic_vpn_key)
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+            .addAction(
+                0,
+                ctx.getString(net.swlr.vpnmaster.R.string.notification_action_disconnect),
+                disconnectIntent
+            )
+            .build()
+
+        try {
+            ctx.getSystemService(android.app.NotificationManager::class.java)
+                ?.notify(VpnMasterService.NOTIFICATION_ID, notification)
+            Log.d("WatchdogWorker", "Re-posted connected status notification")
+        } catch (e: Exception) {
+            Log.w("WatchdogWorker", "Failed to re-post connected notification: ${e.message}")
+        }
     }
 }

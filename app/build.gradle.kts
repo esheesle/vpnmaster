@@ -22,8 +22,8 @@ android {
         applicationId = "net.swlr.vpnmasterapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.2.6"
+        versionCode = 15
+        versionName = "1.2.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

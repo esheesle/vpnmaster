@@ -1,5 +1,8 @@
 package net.swlr.vpnmaster.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,12 +20,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +42,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +51,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -52,6 +62,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.wireguard.crypto.Key
+import com.wireguard.crypto.KeyPair
 import net.swlr.vpnmaster.R
 import net.swlr.vpnmaster.data.model.WireGuardConfig
 import net.swlr.vpnmaster.data.model.WireGuardPeer
@@ -178,7 +190,8 @@ fun ProfileEditScreen(
                 config = currentProfile.wireGuardConfig ?: WireGuardConfig(),
                 onConfigChange = {
                     viewModel.updateEditingProfile(currentProfile.copy(wireGuardConfig = it))
-                }
+                },
+                onMessage = { viewModel.postUiMessage(it) }
             )
 
             Spacer(Modifier.height(24.dp))
@@ -196,7 +209,50 @@ fun ProfileEditScreen(
 }
 
 @Composable
-private fun WireGuardConfigForm(config: WireGuardConfig, onConfigChange: (WireGuardConfig) -> Unit) {
+private fun WireGuardConfigForm(
+    config: WireGuardConfig,
+    onConfigChange: (WireGuardConfig) -> Unit,
+    onMessage: (String) -> Unit
+) {
+    val context = LocalContext.current
+    // rememberSaveable so the confirm-replace dialog survives rotation / config
+    // change — otherwise an in-flight confirmation silently disappears.
+    var showOverwriteDialog by rememberSaveable { mutableStateOf(false) }
+
+    fun generateKeyPair() {
+        try {
+            val pair = KeyPair()
+            onConfigChange(config.copy(privateKey = pair.privateKey.toBase64()))
+            onMessage(context.getString(R.string.wg_keypair_generated))
+        } catch (t: Throwable) {
+            onMessage(context.getString(R.string.wg_keypair_failed))
+        }
+    }
+
+    if (showOverwriteDialog) {
+        AlertDialog(
+            onDismissRequest = { showOverwriteDialog = false },
+            title = { Text(stringResource(R.string.wg_overwrite_key_title)) },
+            text = { Text(stringResource(R.string.wg_overwrite_key_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showOverwriteDialog = false
+                        generateKeyPair()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text(stringResource(R.string.wg_replace)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOverwriteDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -206,10 +262,70 @@ private fun WireGuardConfigForm(config: WireGuardConfig, onConfigChange: (WireGu
             )
             Spacer(Modifier.height(8.dp))
 
+            // Trim on input — pasted keys often carry trailing whitespace/newlines
+            // that would silently fail base64 parsing both here (public-key derive)
+            // and at connect time. Whitespace is never valid in a WireGuard key.
             SecretField(
                 value = config.privateKey,
-                onValueChange = { onConfigChange(config.copy(privateKey = it)) },
+                onValueChange = { onConfigChange(config.copy(privateKey = it.trim())) },
                 label = stringResource(R.string.wg_private_key)
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // Derive the public key live from whatever is in the private-key field.
+            // Returns null for empty/invalid input; we keep the row rendered either
+            // way so the layout below doesn't jump as the user types.
+            val derivedPublicKey = remember(config.privateKey) {
+                runCatching { KeyPair(Key.fromBase64(config.privateKey)).publicKey.toBase64() }
+                    .getOrNull()
+            }
+
+            OutlinedButton(
+                onClick = {
+                    if (config.privateKey.isBlank()) generateKeyPair()
+                    else showOverwriteDialog = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Autorenew, null)
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.wg_generate_keypair))
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            val invalid = derivedPublicKey == null && config.privateKey.isNotBlank()
+            val supportingMsg = when {
+                derivedPublicKey != null -> stringResource(R.string.wg_public_key_share_hint)
+                invalid -> stringResource(R.string.wg_public_key_invalid_hint)
+                else -> stringResource(R.string.wg_public_key_empty_hint)
+            }
+            OutlinedTextField(
+                value = derivedPublicKey ?: "",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(stringResource(R.string.wg_public_key_derived)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = invalid,
+                supportingText = { Text(supportingMsg) },
+                trailingIcon = if (derivedPublicKey != null) {
+                    {
+                        IconButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(
+                                ClipData.newPlainText("WireGuard public key", derivedPublicKey)
+                            )
+                            onMessage(context.getString(R.string.wg_public_key_copied))
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = stringResource(R.string.wg_copy_public_key)
+                            )
+                        }
+                    }
+                } else null
             )
 
             Spacer(Modifier.height(8.dp))

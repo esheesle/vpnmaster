@@ -62,6 +62,17 @@
     <string name="wg_peer_allowed_ips">Allowed IPs (comma-separated)</string>
     <string name="wg_peer_keepalive">Persistent Keepalive (seconds)</string>
     <string name="wg_generate_keypair">Generate Key Pair</string>
+    <string name="wg_public_key_derived">Public Key (derived)</string>
+    <string name="wg_copy_public_key">Copy public key</string>
+    <string name="wg_public_key_copied">Public key copied</string>
+    <string name="wg_keypair_generated">Key pair generated</string>
+    <string name="wg_keypair_failed">Failed to generate key pair</string>
+    <string name="wg_public_key_share_hint">Client public key — share with your VPN administrator</string>
+    <string name="wg_public_key_empty_hint">Enter or generate a private key to derive its public key</string>
+    <string name="wg_public_key_invalid_hint">Private key is not a valid 32-byte base64 key</string>
+    <string name="wg_overwrite_key_title">Replace existing private key?</string>
+    <string name="wg_overwrite_key_message">A private key is already set. Generating a new key pair will replace it. Any public key you have already shared with your VPN administrator will stop working — you will need to share the new one.</string>
+    <string name="wg_replace">Replace</string>
     <string name="wg_add_peer">Add Peer</string>
     <string name="wg_remove_peer">Remove Peer</string>
 

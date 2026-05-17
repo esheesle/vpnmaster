@@ -49,10 +49,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.navigation.NavHostController
 import net.swlr.vpnmaster.R
 import net.swlr.vpnmaster.logging.LogBuffer
 import net.swlr.vpnmaster.logging.LogEntry
+import java.io.File
 
 private val LEVEL_LABELS = listOf("All", "E", "W", "I", "D", "V")
 
@@ -226,14 +228,39 @@ private fun copyToClipboard(context: Context) {
 }
 
 private fun shareLogs(context: Context) {
+    // Write to a file and share via FileProvider rather than putting the log
+    // text in EXTRA_TEXT. Intent extras travel through a Binder transaction
+    // (~1MB hard ceiling); a few days of reconnect-heavy logs blow past that
+    // and the chooser silently fails to appear. EXTRA_STREAM hands over a
+    // URI so the receiving app reads the bytes on its own.
     val text = LogBuffer.snapshot()
+    val sharedDir = File(context.cacheDir, "shared").apply { mkdirs() }
+    val outFile = File(sharedDir, "vpnmaster-logs.txt")
+    try {
+        outFile.writeText(text)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Could not write logs: ${e.message}", Toast.LENGTH_LONG).show()
+        return
+    }
+    val uri = try {
+        FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            outFile
+        )
+    } catch (e: Exception) {
+        Toast.makeText(context, "Could not share logs: ${e.message}", Toast.LENGTH_LONG).show()
+        return
+    }
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_SUBJECT, "VpnMaster logs")
-        putExtra(Intent.EXTRA_TEXT, text)
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     context.startActivity(Intent.createChooser(intent, "Share logs").apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     })
 }

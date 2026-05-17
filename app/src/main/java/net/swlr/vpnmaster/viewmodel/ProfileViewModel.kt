@@ -180,4 +180,8 @@ class ProfileViewModel @Inject constructor(
     fun clearMessage() {
         _uiMessage.value = null
     }
+
+    fun postUiMessage(message: String) {
+        _uiMessage.value = message
+    }
 }
