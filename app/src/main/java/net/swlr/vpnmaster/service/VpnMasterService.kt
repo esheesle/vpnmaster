@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import net.swlr.vpnmaster.logging.AppLog as Log
 import androidx.core.app.NotificationCompat
@@ -55,6 +56,15 @@ class VpnMasterService : GoBackend.VpnService() {
         // replaces content cleanly without a flicker.
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "vpn_status"
+        // Tag attached to notifications written to NOTIFICATION_ID so callers
+        // sharing the slot (WatchdogWorker, StatusNotificationController) can
+        // tell which variant is currently posted. id alone isn't enough — the
+        // Connected, Disconnected, and transient FGS variants all use the same
+        // id, and a stale Disconnected in the slot used to fool the watchdog's
+        // "is it already posted?" check into skipping a needed repost.
+        const val EXTRA_NOTIFICATION_KIND = "net.swlr.vpnmaster.notification.kind"
+        const val KIND_CONNECTED = "connected"
+        const val KIND_DISCONNECTED = "disconnected"
         // Distinct alert IDs so the two alert types don't collapse onto each
         // other if both fire. Channels are also distinct so users can configure
         // sound/importance per type in Android system settings.
@@ -129,7 +139,8 @@ class VpnMasterService : GoBackend.VpnService() {
                         VpnState.RECONNECTING -> getString(R.string.vpn_reconnecting)
                         VpnState.DISCONNECTED -> "" // unreachable, handled above
                     }
-                    updateNotification(text, state == VpnState.CONNECTED)
+                    val kind = if (state == VpnState.CONNECTED) KIND_CONNECTED else null
+                    updateNotification(text, state == VpnState.CONNECTED, kind)
                 }
 
                 when (state) {
@@ -515,7 +526,7 @@ class VpnMasterService : GoBackend.VpnService() {
         getSystemService(NotificationManager::class.java).notify(notificationId, notification)
     }
 
-    private fun buildNotification(text: String, showDisconnect: Boolean = false): Notification {
+    private fun buildNotification(text: String, showDisconnect: Boolean = false, kind: String? = null): Notification {
         val contentIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -530,6 +541,10 @@ class VpnMasterService : GoBackend.VpnService() {
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+
+        if (kind != null) {
+            builder.addExtras(Bundle().apply { putString(EXTRA_NOTIFICATION_KIND, kind) })
+        }
 
         if (showDisconnect) {
             val disconnectIntent = PendingIntent.getService(
@@ -549,9 +564,9 @@ class VpnMasterService : GoBackend.VpnService() {
         return builder.build()
     }
 
-    private fun updateNotification(text: String, showDisconnect: Boolean = false) {
+    private fun updateNotification(text: String, showDisconnect: Boolean = false, kind: String? = null) {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification(text, showDisconnect))
+        manager.notify(NOTIFICATION_ID, buildNotification(text, showDisconnect, kind))
     }
 
     // Android 14+ requires the foregroundServiceType bitmask to be passed to

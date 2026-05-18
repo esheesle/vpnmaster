@@ -641,6 +641,20 @@ class WatchdogWorker @dagger.assisted.AssistedInject constructor(
 
     private fun repostConnectedNotification() {
         val ctx = applicationContext
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+
+        // Skip only when the slot already holds the Connected variant. Checking
+        // the id alone isn't enough: the post-service Disconnected notification
+        // shares NOTIFICATION_ID, so a stale Disconnected would otherwise look
+        // "already posted" and we'd skip the repair the user actually needs.
+        // Re-issuing notify() with the same id is otherwise harmless, but it
+        // can re-trigger heads-up presentation on some OEMs and resets the
+        // user's swipe-collapse state on others — both visible to the user
+        // even though we're "just refreshing".
+        val existing = nm?.activeNotifications?.firstOrNull { it.id == VpnMasterService.NOTIFICATION_ID }
+        val existingKind = existing?.notification?.extras?.getString(VpnMasterService.EXTRA_NOTIFICATION_KIND)
+        if (existingKind == VpnMasterService.KIND_CONNECTED) return
+
         val profileName = orchestrator.activeProfile.value?.name ?: ""
         val text = ctx.getString(net.swlr.vpnmaster.R.string.notification_connected, profileName)
 
@@ -665,6 +679,9 @@ class WatchdogWorker @dagger.assisted.AssistedInject constructor(
             .setOngoing(true)
             .setSilent(true)
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+            .addExtras(android.os.Bundle().apply {
+                putString(VpnMasterService.EXTRA_NOTIFICATION_KIND, VpnMasterService.KIND_CONNECTED)
+            })
             .addAction(
                 0,
                 ctx.getString(net.swlr.vpnmaster.R.string.notification_action_disconnect),
@@ -673,9 +690,13 @@ class WatchdogWorker @dagger.assisted.AssistedInject constructor(
             .build()
 
         try {
-            ctx.getSystemService(android.app.NotificationManager::class.java)
-                ?.notify(VpnMasterService.NOTIFICATION_ID, notification)
-            Log.d("WatchdogWorker", "Re-posted connected status notification")
+            nm?.notify(VpnMasterService.NOTIFICATION_ID, notification)
+            val replaced = when {
+                existing == null -> "slot was empty"
+                existingKind == null -> "displaced untagged notification"
+                else -> "displaced kind=$existingKind"
+            }
+            Log.i("WatchdogWorker", "Re-posted connected status notification ($replaced)")
         } catch (e: Exception) {
             Log.w("WatchdogWorker", "Failed to re-post connected notification: ${e.message}")
         }
