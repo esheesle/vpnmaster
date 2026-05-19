@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import net.swlr.vpnmaster.data.model.SplitTunnelMode
 import net.swlr.vpnmaster.data.repository.SettingsRepository
 import net.swlr.vpnmaster.vpn.VpnOrchestrator
@@ -59,6 +60,13 @@ class WatchdogManager @Inject constructor(
         private const val PROBE_TIMEOUT_MS = 2_000
         // Spacing between probe attempts in a burst.
         private const val PROBE_INTERVAL_MS = 2_000L
+        // Outer ceiling on a single sendProbe call. sendProbe does two back-to-back
+        // socket ops with PROBE_TIMEOUT_MS each, so a well-behaved call takes up to
+        // ~2*PROBE_TIMEOUT_MS. The extra slack absorbs scheduling jitter. If the
+        // call exceeds this, the underlying JNI socket op is misbehaving (kernel
+        // didn't honor the timeout — happens on flaky cellular during interface
+        // teardown or after a doze suspend) and the watchdog orphans it.
+        private const val PROBE_HANG_CEILING_MS = 5_000L
         // After a probe-triggered reconnect, suppress further probe-triggered
         // reconnects for this long. Falls back to the slower handshake-age path
         // during the cooldown so a misbehaving probe target (or a genuinely down
@@ -458,7 +466,7 @@ class WatchdogManager @Inject constructor(
             // check decide whether to reconnect on the result.
 
             val rxBefore = orchestrator.statistics.value.bytesReceived
-            sendProbe(target)
+            sendProbeBounded(target)
             // Wait for any response to round-trip and update the counter.
             delay(PROBE_INTERVAL_MS)
 
@@ -490,6 +498,34 @@ class WatchdogManager @Inject constructor(
             }
         } catch (_: Exception) {
             // Connection failures (RST, timeout, unreachable) are expected and fine.
+        }
+    }
+
+    /**
+     * Runs [sendProbe] with a hard ceiling on how long the watchdog tick will
+     * wait. The underlying isReachable / Socket.connect calls in [sendProbe]
+     * each take a timeout parameter, but the Android kernel doesn't always
+     * honor it on flaky cellular — radio interface teardown, cell handoff, or
+     * a doze suspend mid-connect can leave the syscall blocked well past its
+     * nominal timeout. When that happens the tick coroutine (single-threaded)
+     * is pinned, no further ticks fire, and the watchdog goes silent. The
+     * symptom in logs is "Probe burst start" with no subsequent attempt line.
+     *
+     * Fix: launch the probe as a sibling job on the watchdog scope, race it
+     * against a coroutine-level timeout, and if the timer wins, cancel the
+     * job and continue. Coroutine cancellation is cooperative — the stuck JNI
+     * call will still hold the IO thread until the kernel finally returns —
+     * but the tick coroutine itself moves on. The orphaned job completes on
+     * its own and is GC'd; Dispatchers.IO has a generous thread pool, so one
+     * parked thread per hang is tolerable.
+     */
+    private suspend fun sendProbeBounded(target: InetAddress) {
+        val scopeRef = scope ?: return
+        val probeJob = scopeRef.launch(Dispatchers.IO) { sendProbe(target) }
+        val finished = withTimeoutOrNull(PROBE_HANG_CEILING_MS) { probeJob.join() }
+        if (finished == null) {
+            probeJob.cancel()
+            Log.w(TAG, "Probe to ${target.hostAddress} exceeded ${PROBE_HANG_CEILING_MS}ms — orphaning IO and treating as no rx (kernel likely didn't honor socket timeout)")
         }
     }
 
