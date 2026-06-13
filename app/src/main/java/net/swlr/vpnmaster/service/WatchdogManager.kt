@@ -232,6 +232,12 @@ class WatchdogManager @Inject constructor(
         }
 
         schedulePeriodicWork()
+        // Fast process-death recovery. The periodic work above can't fire below a
+        // 15-min floor, so an OEM/low-memory kill can leave the tunnel down for up
+        // to ~14min. A self-rescheduling alarm (also process-death-surviving) closes
+        // that to a couple of minutes. Idempotent like schedulePeriodicWork(): a
+        // re-arm just replaces the pending alarm.
+        HeartbeatReceiver.schedule(context)
     }
 
     fun stop() {
@@ -239,6 +245,7 @@ class WatchdogManager @Inject constructor(
         scope = null
         watchdogJob = null
         WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        HeartbeatReceiver.cancel(context)
     }
 
     /**

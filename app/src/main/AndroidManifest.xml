@@ -80,6 +80,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- Driven only by an explicit AlarmManager PendingIntent (see
+             HeartbeatReceiver); no intent-filter, not exported. -->
+        <receiver
+            android:name=".service.HeartbeatReceiver"
+            android:exported="false" />
+
         <service
             android:name=".service.VpnTileService"
             android:exported="true"
